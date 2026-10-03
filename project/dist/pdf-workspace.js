@@ -162,10 +162,10 @@ function exportSelectionKey(c=current()){const ids=selectedExportIds(c);return c
 function changeExportSelection(){const c=current();pdfExportSelection.set(c.id,[...document.querySelectorAll('.exportcheck:checked')].map(e=>e.value));pdfExportAttempt='';render();}
 function queueExportPreparation(){if(route!=='export'||pdfBusy)return;const key=exportSelectionKey();if(!selectedExportIds().length||pdfExportAttempt===key)return;clearTimeout(pdfExportTimer);pdfExportTimer=setTimeout(()=>{if(route==='export'&&!pdfBusy&&exportSelectionKey()===key)doExport();},100);}
 function exportDownloadAction(){const p=pdfPreparedDownload,key=exportSelectionKey();const icon='<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg> ';
- if(p&&p.caseId===current().id&&p.selectionKey===key)return `<a id="exportSelected" class="primary native-export-link" href="${esc(p.url)}" download="${esc(p.name)}" onclick="pdfDownloadRequested(this)">${icon}匯出檔案</a>`;
+ if(p&&p.caseId===current().id&&p.selectionKey===key)return `<a id="exportSelected" class="primary native-export-link" href="${esc(p.url)}" download="${esc(p.name)}" onclick="return pdfDownloadRequested(this)">${icon}匯出檔案</a>`;
  const retry=!pdfBusy&&pdfExportAttempt===key&&selectedExportIds().length;return `<button id="exportSelected" class="primary" ${retry?'':'disabled'} onclick="pdfExportAttempt='';doExport()">${icon}${pdfBusy?'準備 ZIP 中…':retry?'重新準備檔案':'匯出檔案'}</button>`;
 }
-function exportNotes(){return `<details class="card export-notes"><summary>備註與匯出規格</summary><ul><li>每頁合併成單一影像，遮蔽與備註無法單獨移動；文字無法搜尋或選取，向量內容會轉為像素。</li><li>600 dpi、無損壓縮，保留原始紙張尺寸、頁數及順序。列印請選「實際大小／100%」。</li><li>單頁上限 8,000 萬像素；超出會提示失敗，不會自動降低解析度。</li><li>下載 ZIP 包含成功的 PDF 與匯出清單；失敗項目請修正後重試。</li><li>系統先準備 ZIP；完成後按「匯出檔案」下載。若內嵌頁面限制下載，請在獨立分頁開啟本站後重試。下載要求不代表檔案已儲存至裝置。</li></ul></details>`;}
+function exportNotes(){return `<details class="card export-notes"><summary>備註與匯出規格</summary><ul><li>每頁依實際內容輸出：未遮蔽頁保留原始向量與尺寸；有遮蔽頁白色不可逆遮蔽並以 600 dpi 無損影像輸出；備註是可在 Adobe Acrobat 編輯的便利貼註解。約 100 KB／PDF 是目標，不會降低畫質以符合容量；超過時下載前提示。</li><li>600 dpi、無損壓縮，保留原始紙張尺寸、頁數及順序。列印請選「實際大小／100%」。</li><li>單頁上限 8,000 萬像素；超出會提示失敗，不會自動降低解析度。</li><li>下載 ZIP 包含成功的 PDF 與匯出清單；失敗項目請修正後重試。</li><li>系統先準備 ZIP；完成後按「匯出檔案」下載。若內嵌頁面限制下載，請在獨立分頁開啟本站後重試。下載要求不代表檔案已儲存至裝置。</li></ul></details>`;}
 function exportProgressCard(){const s=pdfExportState;if(!s||s.caseId!==current()?.id)return '';return `<div class="export-progress" aria-live="polite"><p>${esc(s.text)}</p>${s.running?`<progress value="${s.value}" max="100" aria-label="匯出進度"></progress><button onclick="cancelInlineExport()">取消匯出</button>`:''}${s.results.filter(r=>r.result==='失敗').map(r=>`<p class="review-important">${esc(r.file)}：${esc(r.reason)}</p>`).join('')}</div>`;}
 function updateInlineExport(text,value){if(!pdfExportState)return;pdfExportState.text=text;pdfExportState.value=value;const el=document.querySelector('#exportProgress');if(el)el.innerHTML=exportProgressCard();}
 function cancelInlineExport(){const s=pdfExportState;if(!s?.running)return;s.cancelRequested=true;s.controller.abort();updateInlineExport('正在取消匯出…',s.value);}
@@ -183,9 +183,11 @@ function pdfDownload(blob,name,caseId,groups){
  pdfPreparedDownload={url:URL.createObjectURL(blob),name,size:blob.size,caseId,requested:false,
   files:groups.map(g=>({name:g.name,pages:g.pages.map(f=>({id:f.id,sourceId:f.sourceId,pageIndex:f.pageIndex,key:pdfKey(f)}))}))};
 }
-function pdfDownloadCard(){const p=pdfPreparedDownload;if(!p||p.caseId!==current()?.id||p.selectionKey!==exportSelectionKey())return '';return `<div class="pdf-download-ready" role="status"><span>${esc(p.name)} · ${pdfUploadSize(p.size)}</span> <a class="pdf-download-link" href="${esc(p.url)}" download="${esc(p.name)}" onclick="pdfDownloadRequested(this)">重新下載 ZIP</a><p class="pdf-download-status">${p.requested?'已發出下載要求，請查看瀏覽器下載清單。':'檔案已準備好，可點擊連結下載。'}</p></div>`;}
+function pdfDownloadCard(){const p=pdfPreparedDownload;if(!p||p.caseId!==current()?.id||p.selectionKey!==exportSelectionKey())return '';return `<div class="pdf-download-ready" role="status"><span>${esc(p.name)} · ${pdfUploadSize(p.size)}</span> <a class="pdf-download-link" href="${esc(p.url)}" download="${esc(p.name)}" onclick="return pdfDownloadRequested(this)">重新下載 ZIP</a><p class="pdf-download-status">${p.requested?'已發出下載要求，請查看瀏覽器下載清單。':'檔案已準備好，可點擊連結下載。'}</p></div>`;}
 
-function pdfDownloadRequested(link){const p=pdfPreparedDownload;if(!p||p.caseId!==current()?.id||p.selectionKey!==exportSelectionKey())return;
+function pdfDownloadRequested(link){const p=pdfPreparedDownload;if(!p||p.caseId!==current()?.id||p.selectionKey!==exportSelectionKey())return false;
+ const oversized=p.pdfSizes?.filter(f=>f.bytes>102400)||[];
+ if(oversized.length&&!confirm('以下 PDF 超過約 100 KB 目標（不降低畫質）：\n'+oversized.map(f=>`${f.name}：${pdfUploadSize(f.bytes)}`).join('\n')+'\n仍要下載嗎？'))return false;
  p.name=pdfZipName(current());if(link)link.download=p.name;
  if(!p.requested){p.requested=true;const c=cases.find(c=>c.id===p.caseId);
   if(c){for(const g of p.files){for(const saved of g.pages){const f=c.files.find(f=>f.id===saved.id&&f.sourceId===saved.sourceId&&f.pageIndex===saved.pageIndex);if(f&&pdfKey(f)===saved.key&&isExportReady(f))f.status='已匯出';}
@@ -194,6 +196,7 @@ function pdfDownloadRequested(link){const p=pdfPreparedDownload;if(!p||p.caseId!
  document.querySelectorAll('.pdf-download-status').forEach(el=>el.textContent='已發出下載要求；請查看瀏覽器下載清單。若未收到，可再次點擊下載。');
  // Let the native link's default action complete before updating the underlying page.
  setTimeout(()=>{if(route==='export')render();},1000);
+ return true;
 }
 window.addEventListener('pagehide',e=>{if(!e.persisted&&pdfPreparedDownload)URL.revokeObjectURL(pdfPreparedDownload.url);});
 doExport=async function(){
@@ -207,11 +210,11 @@ doExport=async function(){
  try{
   for(let i=0;i<groups.length;i++){
    if(d.cancelRequested)break;const g=groups[i];updateInlineExport(`處理 ${i+1} / ${groups.length}：${g.name}`,i/groups.length*90);
-   try{const output=await finalDocument(g,d.controller.signal);if(d.cancelRequested)break;const name=g.name.replace(/\.pdf$/i,'')+'_NL.pdf',outputPath=zip.file(name)?'同名檔案_'+(i+1)+'/'+name:name;zip.file(outputPath,output);success.push(g);d.results.push({file:g.name,pages:g.pages.length,result:'成功',output:outputPath});}
+   try{const output=await finalDocument(g,d.controller.signal);if(d.cancelRequested)break;const name=g.name.replace(/\.pdf$/i,'')+'_NL.pdf',outputPath=zip.file(name)?'同名檔案_'+(i+1)+'/'+name:name;zip.file(outputPath,output);success.push(g);d.results.push({file:g.name,pages:g.pages.length,result:'成功',output:outputPath,bytes:output.byteLength});}
    catch(e){if(d.cancelRequested)break;d.results.push({file:g.name,pages:g.pages.length,result:'失敗',reason:e.message});}
   }
   if(d.cancelRequested){d.text='已取消匯出，未發出下載要求。';return;}
-  if(success.length){zip.file('匯出清單.json',JSON.stringify({case:c.name,time:new Date().toISOString(),format:'每頁單一影像',dpi:600,compression:'lossless',files:d.results},null,2));updateInlineExport('打包下載檔案…',95);const zipBytes=await zip.generateAsync({type:'uint8array',compression:'STORE'});const verified=await JSZip.loadAsync(zipBytes,{checkCRC32:true});if(verified.file(/\.pdf$/i).length!==success.length)throw Error('ZIP 內容驗證失敗，請重新準備檔案。');const blob=new Blob([zipBytes],{type:'application/zip'});if(d.cancelRequested){d.text='已取消匯出，未發出下載要求。';return;}pdfDownload(blob,pdfZipName(c),c.id,success);pdfPreparedDownload.selectionKey=selectionKey;d.text=`已準備 ${success.length} / ${groups.length} 份，請按「匯出檔案」下載 ZIP。`;}
+  if(success.length){zip.file('匯出清單.json',JSON.stringify({case:c.name,time:new Date().toISOString(),format:'未遮蔽頁保留向量；遮蔽頁白色不可逆點陣化；備註為可編輯 PDF 註解',dpi:600,compression:'lossless',files:d.results},null,2));updateInlineExport('打包下載檔案…',95);const zipBytes=await zip.generateAsync({type:'uint8array',compression:'STORE'});const verified=await JSZip.loadAsync(zipBytes,{checkCRC32:true});if(verified.file(/\.pdf$/i).length!==success.length)throw Error('ZIP 內容驗證失敗，請重新準備檔案。');const blob=new Blob([zipBytes],{type:'application/zip'});if(d.cancelRequested){d.text='已取消匯出，未發出下載要求。';return;}pdfDownload(blob,pdfZipName(c),c.id,success);pdfPreparedDownload.selectionKey=selectionKey;pdfPreparedDownload.pdfSizes=d.results.filter(r=>r.result==='成功').map(r=>({name:r.output,bytes:r.bytes}));d.text=`已準備 ${success.length} / ${groups.length} 份：${pdfPreparedDownload.pdfSizes.map(f=>`${f.name} ${pdfUploadSize(f.bytes)}`).join('；')}。請按「匯出檔案」下載 ZIP。`;}
   else d.text='沒有成功產生檔案，請查看原因後重試。';d.value=100;
  }catch(e){d.text=d.cancelRequested?'已取消匯出，未發出下載要求。':'匯出未完成：'+e.message;}
  finally{d.running=false;d.finished=true;if(pdfActiveTask===d){pdfBusy=false;pdfActiveTask=null;}if(route==='export')render();}

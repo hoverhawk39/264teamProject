@@ -5,7 +5,7 @@ Preserve existing user-approved UI and established route flow.
 
 - Rotation is persisted in 90-degree increments. Original PDF bytes never change. Masks and notes (including text orientation) follow page rotation. Preview and export must agree.
 - Any edit, batch operation, undo or redo invalidates confirmation on affected pages. Never auto-confirm batch targets. Export only complete documents with every page confirmed.
-- Export original basename + _NL.pdf, preserve page order, dimensions and count. Every output page is a single lossless 600-DPI image. Never silently lower resolution. Keep 80MP guard until a measured desktop/server export implementation replaces it.
+- Export original basename + _NL.pdf, preserve page order, dimensions and count. Unmasked pages preserve original vector/text; masked pages irreversibly remove source content and become a single lossless 600-DPI image with white masks. Notes are independent editable PDF Text annotations above either page type. Do not silently lower resolution; keep the 80MP guard for masked pages. About 100KB per PDF is a target, not a hard cap; show actual size and ask before downloading larger files.
 - Source PDFs are binary files, not Base64 localStorage. Browser metadata is prototype storage; local server is single-user test-only.
 - Batch mask operation adds selected regions to selected pages, skips duplicates, retains existing regions, and is one history transaction.
 - Final preview reads the generated output PDF. Reuse exact cached bytes for unchanged export, invalidate by full edit/revision key.

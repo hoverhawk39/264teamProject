@@ -79,3 +79,9 @@
 .ant-native-label .ui-icon{width:18px;height:18px}
 .antd-enabled .canvasbar .ant-btn{min-height:36px;height:auto;padding:6px 10px}
 .antd-enabled .zoom-toolbar .ant-btn{min-height:34px;height:auto}
+.desk-workspace-case{margin-bottom:16px}
+.desk-workspace-files{display:grid;gap:10px}
+.desk-workspace-file{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border,#e8edf2)}
+.desk-workspace-file:last-child{border-bottom:0}
+.desk-workspace-file .ant-space{min-width:0;overflow-wrap:anywhere}
+@media(max-width:760px){.desk-workspace-file{align-items:flex-start;flex-direction:column}}

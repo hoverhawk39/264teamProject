@@ -39,3 +39,19 @@ async function openContinuous(){const f=file(),g=pdfGroups().find(g=>g.id===f?.s
 const documentReview=reviewPage;reviewPage=function(){return documentReview().replace('<h2>最終出圖預覽</h2>','<h2>最終出圖預覽</h2>'+(file()?.sourceId&&pdfGroups().some(g=>g.id===file().sourceId&&g.pages.length>1)?'<button onclick="openContinuous()">整份連續預覽</button>':''));};
 const toolsRender=render;render=function(){toolsRender();if(route==='work')bindListResize();};
 render();
+// Attachment-inspired quick creation: keep the existing note schema/history and
+// inspector, but let the operator choose one of its three primary sticky colors.
+const editorAddNote=addNote;
+addNote=function(color){
+  if(color && !['#FFF1AE','#FFDAD6','#CDEEFF'].includes(color))return;
+  if(color)lastColors.note=color;
+  return editorAddNote();
+};
+const editorColorWorkPage=workPage;
+workPage=function(){
+  let html=editorColorWorkPage();
+  if(!current()?.files?.length)return html;
+  const choices=[['#FFF1AE','黃色'],['#FFDAD6','粉紅色'],['#CDEEFF','淺藍色']];
+  const colors=choices.map(([color,label])=>`<button class="editor-note-color" type="button" title="新增${label}便利貼" aria-label="新增${label}便利貼" onclick="addNote('${color}')"><span aria-hidden="true" style="display:inline-block;width:14px;height:14px;border:1px solid #777;vertical-align:middle;background:${color}"></span> ${label}</button>`).join('');
+  return html.replace(/(<button[^>]*onclick="addNote\(\)"[^>]*>[\s\S]*?<\/button>)/,`$1${colors}`);
+};

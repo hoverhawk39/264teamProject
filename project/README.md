@@ -42,7 +42,7 @@ node tests/workflow-state.cjs
 - dist/pdf-workspace.js：PDF 檔案、Worker 呼叫、匯入匯出與頁面 UI。
 - dist/workflow-tools.js：本次整併的旋轉、批次、操作歷史、連續預覽與最終 PDF 快取。
 - dist/project-backup.js：可攜案件備份與本機測試服務連接。
-- dist/pdf-engine.js：MuPDF 解析、遮蔽、文字與單圖層輸出。
+- dist/pdf-engine.js：MuPDF 解析、白色不可逆遮蔽、向量原頁保留與可編輯 PDF 便利貼註解輸出。
 - dist/pdf-worker.js：獨立處理程序入口。
 - server/local.py：本機測試 API；SQLite 索引與案件檔保存。
 - docs/HANDOFF.md：給夥伴與 Codex 的接手指引。
