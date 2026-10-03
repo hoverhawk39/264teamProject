@@ -1,0 +1,23 @@
+{
+  "name": "gam264-drawing-desk",
+  "version": "0.5.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-ui.mjs",
+    "test": "node tests/pdf-rotation.mjs && node tests/workflow-state.cjs",
+    "start": "python3 server/local.py",
+    "test:ui": "node tests/antd-ui.cjs"
+  },
+  "dependencies": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "antd": "6.6.5",
+    "@ant-design/icons": "6.1.0",
+    "dayjs": "1.11.19"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.4",
+    "jsdom": "26.1.0"
+  },
+  "type": "module"
+}

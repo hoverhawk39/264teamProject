@@ -1,0 +1,31 @@
+報價圖面處理系統 — PDF integration source and third-party notices
+
+The browser receives the application source directly (no minification/build step):
+  index.html, app.js, style.css, pdf-workspace.js, pdf-worker.js, pdf-engine.js,
+  ai-settings.js, glossary.js, glossary-data.js.
+A copy of this site's source and assets is available at source.zip.
+
+MuPDF JavaScript / WASM 1.27.0
+Copyright (C) 2004-2025 Artifex Software, Inc.
+Distributed without modifications under GNU Affero General Public License v3
+or later. Full terms: vendor/mupdf/LICENSE.
+Upstream corresponding source, build instructions and licensing:
+  https://github.com/ArtifexSoftware/mupdf.js
+  https://mupdf.com/licensing/
+The browser binding and WASM are the published mupdf@1.27.0 npm distribution.
+Commercial/closed-source distribution requires review of applicable licensing
+and, where appropriate, a commercial license from Artifex.
+
+JSZip
+Copyright Stuart Knightley, David Duponchel, Franz Buchinger, Antonio Afonso.
+Distributed under MIT; see vendor/JSZip-LICENSE.
+
+PDF processing occurs in a local browser worker. Source PDFs are stored in
+IndexedDB, and case metadata remains in this browser's local storage. No AI
+recognition or cloud PDF upload is enabled by this integration.
+
+React / React DOM, Ant Design, Ant Design Icons, Day.js
+Bundled from pinned npm versions (see package.json and package-lock.json).
+Complete dependency license texts: THIRD_PARTY_UI_LICENSES.txt.
+Bundled source notices are also preserved in antd-ui.js.
+UI source: src/ui; build: scripts/build-ui.mjs; bridge: ui-adapter.js.
