@@ -98,4 +98,40 @@ try{
   }finally{display.destroy();annotation.destroy();}
  }finally{page.destroy();}
 }finally{clippedDoc.destroy();}
+const pinkLines=[
+ 'i like to eat hamburger every moring.',
+ 'i like to eat hamburger every moring.',
+ '',
+ 'i like to eat hamburger every moring.',
+ 'i like to eat hamburger every moring.i like to',
+ 'eat hamburger every moring.i like to eat'
+];
+const pink={...note,x:100,y:100,w:390,h:150,padding:3,fontSize:16,text:pinkLines.join('\n'),visualLines:pinkLines};
+const pinkDoc=mupdf.Document.openDocument(exportIndependentPDF(input,[{...empty,stickyNotes:[pink]}]),'application/pdf');
+try{
+ const page=pinkDoc.loadPage(0);
+ try{
+  const annotation=page.getAnnotations()[0],display=annotation.toDisplayList();
+  try{
+   const actual=display.toStructuredText().asText().trim().split(/\n+/);
+   assert.deepEqual(actual,pinkLines.filter(Boolean),'pink note must not lose characters or rewrap in PDF');
+   assert.equal(annotation.getContents(),pink.text);
+  }finally{display.destroy();annotation.destroy();}
+ }finally{page.destroy();}
+}finally{pinkDoc.destroy();}
+const measuredNote={...note,x:100,y:100,w:390,h:100,padding:3,fontSize:16,text:'i like to eat hamburger every moring.i like to',visualLines:['i like to eat hamburger every moring.i like to'],visualWidths:[380]};
+const measuredDoc=mupdf.Document.openDocument(exportIndependentPDF(input,[{...empty,stickyNotes:[measuredNote]}]),'application/pdf');
+try{
+ const page=measuredDoc.loadPage(0);
+ try{
+  const annotation=page.getAnnotations()[0],display=annotation.toDisplayList(),structured=display.toStructuredText();
+  try{
+   const origins=[];
+   structured.walk({onChar(_char,origin){origins.push(origin[0]);}});
+   assert.ok(origins.length>40,'entire browser visual line must remain visible');
+   const span=origins.at(-1)-origins[0];
+   assert.ok(span>60 && span<77,`PDF text should span browser-measured width, not leave a wide blank strip: ${span}`);
+  }finally{structured.destroy();display.destroy();annotation.destroy();}
+ }finally{page.destroy();}
+}finally{measuredDoc.destroy();}
 console.log('PASS: independent PDF masked/vector/note paths, scaled text, editor wraps and clipped overflow');

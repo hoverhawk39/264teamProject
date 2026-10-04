@@ -642,6 +642,61 @@ function wrapStickyText(context, text, maxWidth) {
   return lines.length ? lines : [''];
 }
 
+// Derive PDF line breaks from browser layout, not canvas font metrics: the
+// textarea can use a different fallback font and subpixel widths.
+function stickyVisualLayout(note, textarea) {
+  const style = getComputedStyle(textarea || document.body);
+  const mirror = document.createElement('div');
+  const width = Math.max(1, note.w - note.padding * 2);
+  Object.assign(mirror.style, {
+    position: 'absolute', visibility: 'hidden', pointerEvents: 'none',
+    left: '-100000px', top: '0', width: `${width}px`,
+    fontFamily: style.fontFamily, fontSize: `${note.fontSize}px`,
+    fontWeight: style.fontWeight, fontStyle: style.fontStyle,
+    letterSpacing: style.letterSpacing, lineHeight: style.lineHeight,
+    whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: style.wordBreak
+  });
+  const lines = [], widths = [];
+  const source = String(note.text || '').replace(/\r/g, '');
+  // Keep each paragraph as ONE text node. Separate spans create a break
+  // opportunity at every character, unlike the textarea's word wrapping.
+  document.body.appendChild(mirror);
+  try {
+    for (const paragraph of source.split('\n')) {
+      if (lines.length) mirror.appendChild(document.createElement('br'));
+      const node = document.createTextNode(paragraph);
+      mirror.appendChild(node);
+      const range = document.createRange();
+      let line = '', previousTop = null, offset = 0, lineStart = 0;
+      const addLine = end => {
+        lines.push(line);
+        if (end > lineStart) {
+          range.setStart(node, lineStart);
+          range.setEnd(node, end);
+          widths.push(Math.min(width, range.getClientRects()[0]?.width || 0));
+        } else widths.push(0);
+        line = '';
+        lineStart = end;
+      };
+      const graphemes = stickyGraphemeSegmenter
+        ? Array.from(stickyGraphemeSegmenter.segment(paragraph), part => part.segment)
+        : Array.from(paragraph);
+      for (const character of graphemes) {
+        range.setStart(node, offset);
+        offset += character.length;
+        range.setEnd(node, offset);
+        const rect = range.getClientRects()[0];
+        const top = rect?.top ?? previousTop;
+        if (previousTop !== null && top > previousTop + 0.5) addLine(offset - character.length);
+        line += character;
+        previousTop = top;
+      }
+      addLine(offset);
+    }
+    return {lines, widths};
+  } finally { mirror.remove(); }
+}
+
 function fitStickyNoteToText(note) {
   // The rectangle is user-sized; text never changes its height.
   if (!Number.isFinite(note.manualH)) note.manualH = note.h;
@@ -681,33 +736,41 @@ function buildFinalCanvas(file) {
   return finalCanvas;
 }
 
-function applyZoom() {
+function applyZoom(rebuildNotes = true) {
   const file = state.files[state.currentIndex];
   if (!file) return;
   const {width,height} = editorLogicalSize(file);
   canvas.style.width = (width * zoom) + 'px';
   canvas.style.height = (height * zoom) + 'px';
-  renderStickyNotes();
+  if (rebuildNotes) renderStickyNotes();
+  else scaleStickyLayer(width, height);
   renderMaskHandles();
+}
+
+function scaleStickyLayer(width, height) {
+  stickyLayer.style.width = width + 'px';
+  stickyLayer.style.height = height + 'px';
+  stickyLayer.style.transformOrigin = 'top left';
+  stickyLayer.style.transform = `scale(${zoom})`;
 }
 
 function positionStickyElement(element, note) {
   element.style.backgroundColor = note.color || '#ffeb3b';
-  element.style.left = (note.x * zoom) + 'px';
-  element.style.top = (note.y * zoom) + 'px';
-  element.style.width = (note.w * zoom) + 'px';
-  element.style.height = (note.h * zoom) + 'px';
+  element.style.left = note.x + 'px';
+  element.style.top = note.y + 'px';
+  element.style.width = note.w + 'px';
+  element.style.height = note.h + 'px';
   element.style.borderWidth = '1px';
   const text = element.querySelector('.sticky-text');
   if (!text) return;
-  text.style.left = (note.padding * zoom) + 'px';
-  text.style.top = (note.padding * zoom) + 'px';
-  const availableWidth = (note.w - note.padding * 2) * zoom;
-  const availableHeight = (note.h - note.padding * 2) * zoom;
+  text.style.left = note.padding + 'px';
+  text.style.top = note.padding + 'px';
+  const availableWidth = note.w - note.padding * 2;
+  const availableHeight = note.h - note.padding * 2;
   text.style.width = Math.max(0, availableWidth) + 'px';
   text.style.height = Math.max(0, availableHeight) + 'px';
   text.style.visibility = availableWidth > 0 && availableHeight > 0 ? 'visible' : 'hidden';
-  text.style.fontSize = (note.fontSize * zoom) + 'px';
+  text.style.fontSize = note.fontSize + 'px';
 }
 
 function beginStickyInteraction(event, note, element, type, corner = '') {
@@ -796,8 +859,7 @@ function renderStickyNotes() {
   if (!file) return;
   if (!file.stickyNotes.some(note => note.id === selectedNoteId)) selectedNoteId = null;
   const {width,height} = editorLogicalSize(file);
-  stickyLayer.style.width = (width * zoom) + 'px';
-  stickyLayer.style.height = (height * zoom) + 'px';
+  scaleStickyLayer(width, height);
 
   file.stickyNotes.forEach(note => {
     fitStickyNoteToText(note);
@@ -970,7 +1032,7 @@ function updateButtons() {
   const ready = !!file && !!file.originalImageData && !restoring && !busy;
   undoBtn.disabled = !ready || !file.history.length;
   redoBtn.disabled = !ready || !file.future.length;
-  batchBtn.disabled = !ready || !(file.pendingRects.length + file.bakedRects.length);
+  batchBtn.disabled = !ready || file.pendingRects.length === 0;
   markBtn.disabled = !ready;
   markBtn.setAttribute('aria-pressed', String(!!file && !!file.marked));
   resetBtn.disabled = !ready;
@@ -1127,7 +1189,8 @@ batchBtn.onclick = () => {
   const file = state.files[state.currentIndex];
   if (!file || busy) return;
   const source = file.pages[file.pageIndex];
-  const areas = [...source.bakedRects, ...source.pendingRects].map(r => ({
+  if (!source.pendingRects.length) return;
+  const areas = source.pendingRects.map(r => ({
     x: r.x / source.origW, y: r.y / source.origH, w: r.w / source.origW, h: r.h / source.origH
   }));
   if (!areas.length) return;
@@ -1196,8 +1259,9 @@ resetBtn.onclick = () => {
 // Preview and export consume exactly the same PDF builder.
 async function buildFinalPdf(file) {
   const edits = file.pages.map(page => ({ ...page, stickyNotes: page.stickyNotes.map(note => {
-    measureCtx.font = `${note.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
-    return { ...note, visualLines: wrapStickyText(measureCtx, note.text, Math.max(1, note.w - note.padding * 2)) };
+    const textarea = stickyLayer.querySelector(`[data-note-id="${note.id}"] .sticky-text`);
+    const {lines, widths} = stickyVisualLayout(note, textarea);
+    return { ...note, visualLines: lines, visualWidths: widths };
   }) }));
   return exportIndependentPDF(file.arrayBuffer.slice(0),edits);
 }
@@ -1317,8 +1381,8 @@ document.getElementById('mZoomIn').onclick = () => setModalScale(modalScale * 1.
 document.getElementById('mZoomOut').onclick = () => setModalScale(modalScale / 1.25);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) closePreviewModal(); });
 
-zoomInBtn.onclick = () => { zoom = Math.min(3, zoom + 0.15); applyZoom(); scheduleEditorRender(); };
-zoomOutBtn.onclick = () => { zoom = Math.max(0.3, zoom - 0.15); applyZoom(); scheduleEditorRender(); };
+zoomInBtn.onclick = () => { zoom = Math.min(3, zoom + 0.15); applyZoom(false); scheduleEditorRender(); };
+zoomOutBtn.onclick = () => { zoom = Math.max(0.3, zoom - 0.15); applyZoom(false); scheduleEditorRender(); };
 
 // Resize the sidebar without affecting the PDF or its edit coordinates.
 const sidebar = document.querySelector('aside');
@@ -1350,7 +1414,7 @@ function zoomAt(next, clientX, clientY) {
   const bounds = canvas.getBoundingClientRect();
   const x = (clientX - bounds.left) / zoom, y = (clientY - bounds.top) / zoom;
   zoom = Math.max(0.3, Math.min(3, next));
-  applyZoom();
+  applyZoom(false);
   scheduleEditorRender();
   const after = canvas.getBoundingClientRect();
   editorScroll.scrollLeft += after.left + x * zoom - clientX;

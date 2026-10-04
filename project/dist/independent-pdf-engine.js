@@ -25,7 +25,7 @@ function addNote(page,note,edit){
   const fontSize=Math.max(0.1,(note.fontSize??13)*scale),lineHeight=fontSize*1.35;
   let x=box[0]+pad,y=box[1]+pad+fontSize;
   if(Array.isArray(note.visualLines)){
-   for(const line of note.visualLines){
+   for(const [lineIndex,line] of note.visualLines.entries()){
     const glyphs=Array.from(line,character=>{
      const code=character.codePointAt(0),font=glyphFont(code),gid=font.encodeCharacter(code);
      if(!gid)throw Error('便利貼含無法輸出的字元，請移除特殊符號後重試。');
@@ -33,10 +33,19 @@ function addNote(page,note,edit){
     });
     x=box[0]+pad;
     if(y>box[3]-pad+0.1)break;
+    // Match each PDF line's advance to the browser's measured line width.
+    // Fitting only overlong lines made Helvetica text much narrower than the
+    // editor and left a conspicuous empty strip at the note's right edge.
+    const advance=glyphs.reduce((sum,glyph)=>sum+glyph.advance,0);
+    const measured=note.visualWidths?.[lineIndex];
+    const target=Number.isFinite(measured) && measured>0
+     ? Math.min(Math.max(0,width-2*pad),measured*scale)
+     : Math.min(advance,Math.max(0,width-2*pad));
+    const horizontalScale=advance>0?target/advance:1;
     for(const glyph of glyphs){
      const text=new mupdf.Text();
-     try{text.showGlyph(glyph.font,[fontSize,0,0,-fontSize,x,y],glyph.gid,glyph.code);device.fillText(text,mupdf.Matrix.identity,RGB,[0.07,0.07,0.07],1);}finally{text.destroy();}
-     x+=glyph.advance;
+     try{text.showGlyph(glyph.font,[fontSize*horizontalScale,0,0,-fontSize,x,y],glyph.gid,glyph.code);device.fillText(text,mupdf.Matrix.identity,RGB,[0.07,0.07,0.07],1);}finally{text.destroy();}
+     x+=glyph.advance*horizontalScale;
     }
     y+=lineHeight;
    }
