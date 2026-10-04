@@ -6,14 +6,17 @@
     "build": "node scripts/build-ui.mjs",
     "test": "node tests/pdf-rotation.mjs && node tests/workflow-state.cjs",
     "start": "python3 server/local.py",
-    "test:ui": "node tests/antd-ui.cjs"
+    "test:ui": "node tests/antd-ui.cjs && node tests/independent-editor.cjs && node tests/independent-editor-operations.mjs && node tests/independent-pdf.mjs"
   },
   "dependencies": {
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "antd": "6.6.5",
     "@ant-design/icons": "6.1.0",
-    "dayjs": "1.11.19"
+    "antd": "6.6.5",
+    "dayjs": "1.11.19",
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "esbuild": "0.27.4",

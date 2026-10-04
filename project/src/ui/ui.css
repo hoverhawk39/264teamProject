@@ -83,5 +83,7 @@
 .desk-workspace-files{display:grid;gap:10px}
 .desk-workspace-file{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border,#e8edf2)}
 .desk-workspace-file:last-child{border-bottom:0}
+.desk-independent-editor{display:block;width:100%;height:min(78vh,920px);min-height:600px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.desk-editor-notice{margin-bottom:14px}
 .desk-workspace-file .ant-space{min-width:0;overflow-wrap:anywhere}
 @media(max-width:760px){.desk-workspace-file{align-items:flex-start;flex-direction:column}}

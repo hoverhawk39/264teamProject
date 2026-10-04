@@ -1,7 +1,7 @@
 /* Explicit UI adapter: React owns presentation; legacy modules own PDF and storage. */
 (() => {
  if(!window.DrawingDeskAnt)return;
- const managed=['dashboard','cases','drawing-workspace','case','export','settings','appearance','new','edit-case'];
+ const managed=['dashboard','cases','drawing-workspace','drawing-editor','case','export','settings','appearance','new','edit-case'];
  const placeholder=()=>'<div id="antd-page"></div>';
  dashboard=casesPage=casePage=exportPage=settingsPage=appearancePage=newPage=placeholder;
  const snapshot=()=>{
