@@ -9,6 +9,6 @@ const notices=[];
 for(const path of [...new Set(paths)]){
  const pkg=JSON.parse(readFileSync(join(path,'package.json'),'utf8'));
  const file=['LICENSE','LICENSE.md','LICENSE.txt','license','license.md','LICENCE'].find(name=>existsSync(join(path,name)));
- notices.push(`${pkg.name}@${pkg.version} — ${pkg.license||'see package'}\n${file?readFileSync(join(path,file),'utf8').replace(/\r\n/g,'\n'):'See upstream package license.'}`);
+ notices.push(`${pkg.name}@${pkg.version} — ${pkg.license||'see package'}\n${file?readFileSync(join(path,file),'utf8').replace(/\r\n/g,'\n').replace(/[ \t]+$/gm,''):'See upstream package license.'}`);
 }
 writeFileSync('dist/THIRD_PARTY_UI_LICENSES.txt',notices.join('\n\n--------------------\n\n'));

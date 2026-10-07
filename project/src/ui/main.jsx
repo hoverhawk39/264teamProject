@@ -1,108 +1,45 @@
-import React,{useEffect,useState,useRef} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {flushSync} from 'react-dom';
-import {ConfigProvider,App,Button,Card,Table,Tag,Input,Select,Space,Flex,Typography,Statistic,Tooltip,Menu,Pagination,DatePicker,Progress,Collapse,Checkbox,Empty,Alert,Steps,Form} from 'antd';
+import {App,Button,ConfigProvider} from 'antd';
 import zhTW from 'antd/locale/zh_TW';
-import dayjs from 'dayjs';
-import 'dayjs/locale/zh-tw';
-import {PlusOutlined,FolderOpenOutlined,AppstoreOutlined,SettingOutlined,FileTextOutlined,TranslationOutlined,CheckCircleOutlined,DatabaseOutlined,DeleteOutlined,SaveOutlined,EditOutlined,UploadOutlined,DownloadOutlined,RollbackOutlined,TeamOutlined,ApiOutlined,SkinOutlined,InfoCircleOutlined,ArrowLeftOutlined,ArrowRightOutlined,SearchOutlined} from '@ant-design/icons';
 import {deskTheme} from './theme';
 import './ui.css';
-dayjs.locale('zh-tw');
-const {Title,Text}=Typography;
-const statuses=['全部','待確認','處理失敗','可匯出','已匯出'];
-const colors={'待確認':'gold','處理失敗':'red','可匯出':'green','已匯出':'cyan','已確認':'green','未匯入':'default'};
-const Status=({value})=><Tag color={colors[value]||'default'}>{value}</Tag>;
-const stateOf=c=>!c.files.length?'未匯入':c.files.some(f=>f.status==='處理失敗')?'處理失敗':c.files.some(f=>f.status==='待確認')?'待確認':c.files.every(f=>f.status==='已匯出')?'已匯出':'可匯出';
-function Provider({s,children}){return <ConfigProvider locale={zhTW} theme={deskTheme(s.theme)}><App className="desk-ant">{children}</App></ConfigProvider>;}
-function Heading({title,sub,back,children}){return <div className="desk-heading"><div><Flex align="center" gap={10}>{back&&<Button icon={<ArrowLeftOutlined/>} aria-label="返回上一頁" onClick={back}/>}<Title level={1}>{title}</Title></Flex>{sub&&<Text type="secondary">{sub}</Text>}</div><Space wrap>{children}</Space></div>;}
-function CasesTable({s,a,recent=false}){
- const columns=[{title:'案件名稱',dataIndex:'name',key:'name',width:230,render:(name,c)=><Button type="link" className="desk-case-link" onClick={()=>a.openCase(c.id)}>{name}</Button>},{title:'客戶',dataIndex:'client',key:'client',width:180},{title:'建立者',dataIndex:'owner',key:'owner',width:100},{title:'圖面',key:'files',width:120,render:(_,c)=>`${new Set(c.files.map((f,i)=>f.sourceId||f.id||i)).size} 份 / ${c.files.length} 頁`},{title:'狀態',key:'status',width:100,render:(_,c)=><Status value={stateOf(c)}/>},{title:'交付日期',dataIndex:'due',key:'due',width:125}].map(col=>({...col,...(!recent&&col.key!=='status'?{sorter:true,sortOrder:s.sortKey===col.key?(s.sortDirection===1?'ascend':'descend'):null}:{})}));
- return <Table rowKey="id" columns={columns} dataSource={s.rows} pagination={false} scroll={{x:810}} rowSelection={!recent&&s.deleteMode?{selectedRowKeys:s.selected,onChange:a.select}:undefined} onChange={(_,__,sorter)=>a.sort(sorter.columnKey,sorter.order)} onRow={c=>s.deleteMode?{}:{tabIndex:0,'aria-label':`開啟案件 ${c.name}`,onClick:e=>{if(!e.target.closest('button,a,input'))a.openCase(c.id);},onKeyDown:e=>{if(e.target===e.currentTarget&&['Enter',' '].includes(e.key)){e.preventDefault();a.openCase(c.id);}}}} locale={{emptyText:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="沒有符合條件的案件"/>}}/>;
-}
-function ResponsiveStatusChart({s}){
- const frame=useRef(null),[size,setSize]=useState(220);
- useEffect(()=>{
-  const observer=new ResizeObserver(([entry])=>{
-   const {width,height}=entry.contentRect;
-   if(width>0&&height>0)setSize(Math.floor(Math.min(width,height)));
-  });
-  observer.observe(frame.current);return ()=>observer.disconnect();
- },[]);
- return <div className="desk-chart-frame" ref={frame}><Progress type="dashboard" size={size} percent={Math.round((s.stats[2]+s.stats[3])/(s.pageCount||1)*100)} strokeColor={s.theme.primary} format={()=> <div><strong>{s.pageCount}</strong><div className="desk-secondary">總圖面頁數</div></div>}/></div>;
-}
-const metricDescriptions=[
- '尚未通過最終核對的圖面頁數，包含待工作台確認，以及已確認但仍待最終核對的頁面。',
- '處理失敗、需要查看原因並重新處理的圖面頁數。',
- '已通過最終核對、可匯出但尚未發出下載要求的圖面頁數。',
- '已發出成果下載要求的圖面頁數；不代表檔案已儲存至裝置。'
-];
-function Dashboard({s,a}){
- const labels=['待人工確認','需處理的異常','可匯出圖面','已匯出圖面'],week=s.weeks.find(w=>w.key===s.weekKey)||s.weeks[0],max=Math.max(...week.values.filter(x=>x!==null),1);
- return <><Heading title="工作總覽" sub="掌握圖面進度，從今天的待辦開始。"><Button type="primary" icon={<PlusOutlined/>} onClick={()=>a.go('new')}>建立案件</Button></Heading>
- <div className="desk-metrics">{s.stats.map((n,i)=><Card key={labels[i]} hoverable className="desk-metric" tabIndex={0} role="button" aria-label={`${labels[i]} ${n} 頁，查看案件`} onClick={()=>a.metric(statuses[i+1])} onKeyDown={e=>{if(['Enter',' '].includes(e.key)&&e.target===e.currentTarget){e.preventDefault();a.metric(statuses[i+1]);}}}><Statistic title={<Flex justify="space-between"><span>{labels[i]}</span><Tooltip title={metricDescriptions[i]+"統計範圍為所有案件，不受下方篩選影響。"} trigger={['hover','focus','click']}><Button type="text" size="small" aria-label={`${labels[i]}說明`} icon={<InfoCircleOutlined/>} onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}/></Tooltip></Flex>} value={n} valueStyle={{color:i===1?'#c93636':i===0?'#ad6800':s.theme.primary}}/><Text type="secondary">查看相關案件</Text></Card>)}</div>
- <div className="desk-dashboard-grid"><Card title="每週圖面處理量" extra={<Tag>示範資料</Tag>}><Select aria-label="選擇週區間" value={week.key} options={s.weeks.map(w=>({label:w.label,value:w.key}))} onChange={a.week} className="desk-week-select"/><div className="desk-bars" role="img" aria-label={`示範每週處理量：${week.values.map(n=>n??'無資料').join('、')}`}>{week.values.map((n,i)=><div key={i}><Text>{n??'—'}</Text><div className="desk-bar-track"><div style={{height:`${n===null?0:n/max*100}%`,background:i===6?s.theme.primary:s.theme.bar}}/></div><Text type="secondary">{['日','一','二','三','四','五','六'][i]}</Text></div>)}</div><Text type="secondary">單位：頁 · 近 30 天；本週截至今日</Text></Card>
- <Card title="所有案件圖面狀態" extra={<Tag>{s.pageCount} 頁</Tag>}><div className="desk-distribution"><ResponsiveStatusChart s={s}/><Space orientation="vertical" size={14}>{s.stats.map((n,i)=><Flex key={i} gap={12}><Status value={statuses[i+1]}/><Text>{n} 頁</Text></Flex>)}</Space></div></Card></div>
- <Card title="最近案件" extra={<Button type="link" onClick={a.allRecent}>全部案件 <ArrowRightOutlined/></Button>}><div className="desk-status-filters">{statuses.map(t=><Button key={t} type={s.recentCaseStatus===t?'primary':'default'} aria-pressed={s.recentCaseStatus===t} onClick={()=>a.recent(t)}>{t} ({s.counts[t]})</Button>)}</div><CasesTable s={s} a={a} recent/></Card></>;
-}
-function Cases({s,a}){return <><Heading title="案件管理" sub="案件、圖面與處理狀態集中管理。"><Button onClick={a.restore} icon={<RollbackOutlined/>}>還原案件備份</Button><Button type="primary" icon={<PlusOutlined/>} onClick={()=>a.go('new')}>建立案件</Button></Heading><Card><div className="desk-filters"><Input allowClear prefix={<SearchOutlined/>} placeholder="搜尋案件名稱或客戶" aria-label="搜尋案件" value={s.query} onChange={e=>a.filters({query:e.target.value})}/><Select aria-label="篩選案件狀態" value={s.filter} options={statuses.map(t=>({label:`${t} (${s.counts[t]})`,value:t}))} onChange={filter=>a.filters({filter})}/><Select aria-label="篩選建立者" value={s.creatorFilter} options={[{label:'全部建立者',value:''},...[...new Set(s.cases.map(c=>c.owner).filter(Boolean))].map(n=>({label:n,value:n}))]} onChange={owner=>a.filters({owner})}/><Button danger={s.deleteMode} icon={<DeleteOutlined/>} disabled={!s.cases.length} onClick={a.toggleDelete}>{s.deleteMode?'取消選取':'刪除案件'}</Button></div>{s.deleteMode&&<Flex className="desk-batch" align="center" gap={12}><Text>已選取 {s.selected.length} 個案件</Text><Button danger disabled={!s.selected.length} onClick={a.deleteSelected}>刪除選取案件</Button></Flex>}<CasesTable s={s} a={a}/><Pagination className="desk-pagination" current={s.page} total={s.total} pageSize={10} showSizeChanger={false} showQuickJumper showTotal={n=>`共 ${n} 件`} onChange={a.page}/></Card>{s.localProjectService&&<Button className="desk-below" onClick={a.openLocal}>開啟本機已存案件</Button>}</>;}
-function CaseDetail({s,a}){const c=s.c,ready=s.groups.filter(g=>g.done===g.pages.length).length;return <><Heading title={c.name} sub={c.client} back={()=>a.back('cases')}><Tooltip title="修改案件名稱"><Button icon={<EditOutlined/>} aria-label="修改案件名稱" onClick={a.rename}/></Tooltip><Button icon={<SaveOutlined/>} type={s.unsaved?'primary':'default'} onClick={a.save}>儲存進度</Button><Button danger icon={<DeleteOutlined/>} aria-label="刪除案件" onClick={a.deleteCase}/></Heading><div className="desk-case-meta"><Text type={s.unsaved?'warning':'secondary'}>{s.unsaved?'有變更 · 尚未儲存':c.savedAt?'已儲存 '+new Date(c.savedAt).toLocaleString('zh-TW'):'尚未儲存進度'}</Text><Space wrap><Button icon={<UploadOutlined/>} type={!c.files.length?'primary':'default'} onClick={a.importFiles}>匯入圖面</Button><Button type={c.files.length?'primary':'default'} disabled={!ready} onClick={()=>a.go('export')}>查看可匯出項目（{ready} 份）</Button></Space></div><Card className="desk-deadline"><Flex gap={18} align="center" wrap><Text strong>預定交付日</Text><DatePicker value={c.due?dayjs(c.due):null} allowClear={false} aria-label="修改預定交付日" onChange={(_,value)=>a.due(value)} format="YYYY-MM-DD"/></Flex></Card>
- <Card title="圖面處理清單" extra={<Text type="secondary">{s.groups.length} 份檔案 / {c.files.length} 頁</Text>}><Table rowKey="id" dataSource={s.groups} pagination={false} scroll={{x:670}} onRow={g=>({tabIndex:0,'aria-label':`開啟圖面 ${g.name}`,onClick:e=>{if(!e.target.closest('button,a'))a.openFile(g.index);},onKeyDown:e=>{if(e.target===e.currentTarget&&['Enter',' '].includes(e.key)){e.preventDefault();a.openFile(g.index);}}})} columns={[{title:'檔案 / 版本',key:'name',render:(_,g)=><><Button type="link" className="desk-case-link" onClick={()=>a.openFile(g.index)}>{g.name}</Button><div className="desk-secondary">{g.real?'原始 PDF':'示範圖面'} · {g.pages.length} 頁 · {a.ruleLabel(g.pages[0].rule||c.rule)}</div></>},{title:'狀態',render:(_,g)=><Status value={g.pages.every(f=>f.status==='已匯出')?'已匯出':g.done===g.pages.length?'可匯出':'待確認'}/>},{title:'處理進度',render:(_,g)=><span>已通過 {g.done} / {g.pages.length} 頁</span>},{title:'操作',render:(_,g)=><Button onClick={()=>a.openFile(g.index)}>開啟工作台</Button>}]} locale={{emptyText:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚無圖面，請先匯入圖面"/>}}/></Card>
- <div className="desk-stack"><Card title="案件紀錄"><Text>建立者：{c.owner} · 案件已建立</Text><div className="desk-secondary">PDF 原始檔與進度保存在此瀏覽器；AI 處理尚未串接。</div>{s.logs.map((l,i)=><p key={i}>{l.time} · {l.file} · {l.action}</p>)}</Card><Card title="案件備份"><p>包含原始 PDF 與編輯資料，可搬移到本機測試版。</p><Space wrap><Button icon={<DownloadOutlined/>} onClick={a.backup}>下載案件備份</Button>{s.localProjectService&&<Button onClick={a.saveLocal}>另存本機案件</Button>}</Space></Card></div></>;}
-function Export({s,a}){const ready=s.groups.filter(g=>g.done===g.pages.length),p=s.prepared,state=s.exportState,exportLogs=s.logs.filter(l=>l.action.startsWith('PDF 匯出'));return <><Heading title="成果與匯出" sub={s.c.name} back={()=>a.back('review')}><Button onClick={()=>a.back('case')}>返回案件主頁</Button></Heading><div className="desk-export-summary"><Tag>案件共 {s.groups.length} 份 / {s.c.files.length} 頁</Tag><Tag color="green">可匯出 {ready.length} 份 / {ready.reduce((n,g)=>n+g.pages.length,0)} 頁</Tag><Tag>待確認 {s.c.files.filter(f=>!ready.some(g=>g.pages.includes(f))).length} 頁</Tag></div><div className="desk-stack"><Card title="可匯出檔案" extra={p?<Button id="exportSelected" type="primary" href={p.url} download={p.name} onClick={e=>{if(a.download(e.currentTarget)===false)e.preventDefault();}}><DownloadOutlined/> 匯出檔案</Button>:<Button type="primary" loading={s.busy} disabled={s.busy||!s.exportIds.length||!s.exportAttempt} onClick={a.prepare}>{s.busy?'準備 ZIP 中…':s.exportAttempt?'重新準備檔案':'匯出檔案'}</Button>}>
- {ready.length?ready.map(g=><div className="desk-export-file" key={g.id}><Checkbox checked={s.exportIds.includes(g.id)} disabled={!g.real||s.busy} onChange={e=>a.exportSelect(e.target.checked?[...s.exportIds,g.id]:s.exportIds.filter(id=>id!==g.id))}>{g.name}</Checkbox><Tag>{g.pages.length} 頁</Tag>{!g.real&&<Tag>示範 · 無原始 PDF</Tag>}</div>):<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚無整份通過的 PDF"/>}
- {state&&<div className="desk-export-progress" aria-live="polite"><p>{state.text}</p>{state.running&&<><Progress percent={Math.round(state.value)} status="active"/><Button onClick={a.cancelExport}>取消匯出</Button></>}{state.results.filter(r=>r.result==='失敗').map((r,i)=><Alert key={i} type="error" showIcon title={`${r.file}：${r.reason}`}/>)}</div>}
- {p&&<Alert type="success" showIcon title={<span className="desk-wrap">{p.name} · {(p.size/1024/1024).toFixed(2)} MB</span>} description={<><div>{p.requested?'已發出下載要求，請查看瀏覽器下載清單。':'檔案已準備好，請點擊匯出檔案。'}</div><Button type="link" href={p.url} download={p.name} onClick={e=>{if(a.download(e.currentTarget)===false)e.preventDefault();}}>重新下載 ZIP</Button></>}/>}</Card>
- <Card title="匯出紀錄">{exportLogs.length?exportLogs.map((l,i)=><p key={i}>{l.time} · {l.file} · {l.action}</p>):<Text type="secondary">尚無 PDF 匯出紀錄</Text>}</Card><Collapse items={[{key:'notes',label:'備註與匯出規格',children:<ul className="desk-notes"><li>未遮蔽頁保留原 PDF 向量與頁面尺寸；有遮蔽頁以白色不可逆遮蔽後輸出為單張 600 dpi 無損影像。</li><li>便利貼以獨立 PDF 註解輸出，可在 Adobe Acrobat 移動、刪除；請於實際使用的 Adobe 版本驗收。</li><li>每份 PDF 約 100 KB 是目標，超過時顯示實際大小並於下載前詢問；不為達標降低品質。</li><li>單頁上限 8,000 萬像素；超出會提示失敗，不會自動降低解析度。</li><li>ZIP 包含成功的 PDF 與匯出清單；失敗項目請修正後重試。</li><li>系統先準備 ZIP，完成後點「匯出檔案」下載。內嵌頁面若限制下載，請在獨立分頁開啟。下載要求不代表檔案已儲存至裝置。</li></ul>}]} /></div></>;}
-function Settings({s,a}){const list=[['members','成員管理','管理成員姓名、帳號與操作權限（原型）。',<TeamOutlined/>],['ai-settings','AI 服務設定','設定服務連線、資料傳送政策與功能對應。',<ApiOutlined/>],['appearance','介面外觀','目前色系：'+s.theme.label,<SkinOutlined/>]];return <><Heading title="設定" sub="管理成員、服務串接與介面外觀。"/><div className="desk-settings">{list.map(([r,title,desc,icon])=><Card key={r} title={<Space>{icon}{title}</Space>}><p>{desc}</p><Button className="desk-below" onClick={()=>a.go(r)}>開啟{title}</Button></Card>)}</div></>;}
-function Appearance({s,a}){return <><Heading title="介面外觀" sub="設定會保存在目前瀏覽器。" back={()=>a.back('settings')}/><div className="desk-settings">{Object.entries(s.themes).map(([key,t])=><Card key={key} title={t.label} className={key===s.themeKey?'desk-theme-selected':''}><div className="desk-swatches">{[t.primary,t.accent,t.bar,t.bg].map(color=><span key={color} style={{background:color}}/>)}</div><Button block type={key===s.themeKey?'primary':'default'} aria-pressed={key===s.themeKey} onClick={()=>a.theme(key)}>{key===s.themeKey?'目前使用':'套用色系'}</Button></Card>)}</div><Card className="desk-below" title="狀態顏色保持一致"><Space wrap><Status value="已匯出"/><Status value="待確認"/><Status value="處理失敗"/><Tag color="blue">資訊提示</Tag></Space><p>切換品牌色不改變工程圖、遮蔽色與備註色塊。</p><Button onClick={()=>a.theme('janman')}>恢復預設色系</Button></Card></>;}
-function NewCase({s,a}){const c=s.draft,clients=[...new Set(['客戶 A · 精密零件','客戶 B · 工業設備','新客戶 · 人工確認',c?.client].filter(Boolean))];return <><Heading title={s.route==='edit-case'?'編輯案件資訊':'建立案件'} sub="建立基本資料，再匯入圖面進行處理。" back={a.cancelWizard}/><Steps current={0} className="desk-wizard" items={['案件資訊','匯入圖面','選擇規則'].map(title=>({title}))}/><Card><Form layout="vertical" initialValues={{name:c?.name??s.defaultName,client:c?.client??clients[0],owner:c?.owner??s.owner,due:dayjs(c?.due??s.defaultDue)}} onFinish={v=>a.create({...v,name:v.name.trim(),due:v.due.format('YYYY-MM-DD')})}><div className="desk-form-grid"><Form.Item name="name" label="案件名稱" rules={[{required:true,whitespace:true,message:'請輸入案件名稱'}]}><Input allowClear placeholder="請輸入案件名稱"/></Form.Item><Form.Item name="client" label="客戶" rules={[{required:true}]}><Select options={clients.map(value=>({value,label:value}))}/></Form.Item><Form.Item name="owner" label="建立者"><Input readOnly/></Form.Item><Form.Item name="due" label="預定交付日" rules={[{required:true,message:'請選擇交付日'}]}><DatePicker format="YYYY-MM-DD"/></Form.Item></div><Flex justify="flex-end" gap={10}><Button onClick={a.cancelWizard}>取消</Button><Button type="primary" htmlType="submit">下一步：匯入圖面</Button></Flex></Form></Card></>;}
-function IndependentDrawingEditor({s}){
- const frame=useRef(null),[controls,setControls]=useState({loaded:false,undo:false,redo:false,clear:false,preview:false,save:false,export:false});
- useEffect(()=>{frame.current?.contentWindow?.postMessage({type:'drawing-editor-theme',color:s.theme.primary},location.origin);},[s.theme.primary]);
- const run=id=>{const button=frame.current?.contentDocument?.getElementById(id);if(button&&!button.disabled)button.click();};
- const onFrameLoad=()=>{
-  const el=frame.current,doc=el?.contentDocument;if(!doc)return;
-  frame.current.contentWindow.postMessage({type:'drawing-editor-theme',color:s.theme.primary},location.origin);
-  const buttons=['undoBtn','redoBtn','clearProgressBtn','previewBtn','saveProgressBtn','exportBtn'].map(id=>doc.getElementById(id));
-  if(buttons.some(button=>!button))return;
-  const sync=()=>setControls({loaded:true,undo:!buttons[0].disabled,redo:!buttons[1].disabled,clear:!buttons[2].disabled,preview:!buttons[3].disabled,save:!buttons[4].disabled,export:!buttons[5].disabled});
-  sync();const observer=new MutationObserver(sync);
-  buttons.forEach(button=>observer.observe(button,{attributes:true,attributeFilter:['disabled']}));
-  el._editorControlsObserver?.disconnect();el._editorControlsObserver=observer;
+
+const brand={primary:'#245c89',ink:'#243447',muted:'#68788b',line:'#d9e1ea',bg:'#f5f7fa',soft:'#eef4f8'};
+const ids=['undoBtn','redoBtn','clearProgressBtn','previewBtn','saveProgressBtn','exportBtn'];
+
+function DrawingEditor(){
+ const frame=useRef(null),observer=useRef(null);
+ const [ready,setReady]=useState({});
+ const forward=id=>{
+  const button=frame.current?.contentDocument?.getElementById(id);
+  if(button&&!button.disabled)button.click();
  };
- useEffect(()=>()=>{frame.current?._editorControlsObserver?.disconnect();},[]);
- return <><Heading title="圖面編輯區"><Button disabled={!controls.undo} onClick={()=>run('undoBtn')}>復原</Button><Button disabled={!controls.redo} onClick={()=>run('redoBtn')}>重做</Button><Button danger disabled={!controls.loaded||!controls.clear} onClick={()=>run('clearProgressBtn')}>清除進度且重新作業</Button><Button type="primary" disabled={!controls.preview} onClick={()=>run('previewBtn')}>預覽本檔完工圖</Button><Button type="primary" disabled={!controls.save} onClick={()=>run('saveProgressBtn')}>暫存目前進度</Button><Button type="primary" disabled={!controls.export} onClick={()=>run('exportBtn')}>匯出所有完工圖</Button></Heading><iframe ref={frame} onLoad={onFrameLoad} className="desk-independent-editor" title="圖面編輯區工具" src="drawing-editor.html"/></>;
+ const onFrameLoad=()=>{
+  observer.current?.disconnect();
+  const doc=frame.current?.contentDocument;
+  if(!doc){setReady({});return;}
+  frame.current.contentWindow.postMessage({type:'drawing-editor-theme',color:brand.primary},location.origin);
+  const buttons=ids.map(id=>doc.getElementById(id));
+  if(buttons.some(button=>!button)){setReady({});return;}
+  const sync=()=>setReady(Object.fromEntries(ids.map((id,index)=>[id,!buttons[index].disabled])));
+  sync();
+  observer.current=new MutationObserver(sync);
+  buttons.forEach(button=>observer.current.observe(button,{attributes:true,attributeFilter:['disabled']}));
+ };
+ useEffect(()=>()=>observer.current?.disconnect(),[]);
+ return <ConfigProvider locale={zhTW} theme={deskTheme(brand)}><App className="desk-ant">
+  <header className="app-header"><div className="brand"><img src="assets/mold-logo.png" width="34" height="34" alt=""/><span>圖面編輯區</span></div>
+   <div className="header-actions" aria-label="圖面編輯操作">
+    <Button disabled={!ready.undoBtn} onClick={()=>forward('undoBtn')}>復原</Button>
+    <Button disabled={!ready.redoBtn} onClick={()=>forward('redoBtn')}>重做</Button>
+    <Button danger disabled={!ready.clearProgressBtn} onClick={()=>forward('clearProgressBtn')}>清除進度且重新作業</Button>
+    <Button type="primary" disabled={!ready.previewBtn} onClick={()=>forward('previewBtn')}>預覽本檔完工圖</Button>
+    <Button type="primary" disabled={!ready.saveProgressBtn} onClick={()=>forward('saveProgressBtn')}>暫存目前進度</Button>
+    <Button type="primary" disabled={!ready.exportBtn} onClick={()=>forward('exportBtn')}>匯出所有完工圖</Button>
+   </div>
+  </header>
+  <main><h1>圖面編輯區</h1><iframe ref={frame} onLoad={onFrameLoad} title="圖面編輯區工具" src="drawing-editor.html"/></main>
+ </App></ConfigProvider>;
 }
-function DrawingWorkspace({s,a}){
- const available=s.cases.map(c=>({case:c,files:[...new Map(c.files.map((f,i)=>[f.sourceId||f.id||i,{name:f.name,index:i,real:!!f.sourceId}])).values()]}));
- return <><Heading title="圖面編輯工作區" sub="選擇案件與 PDF 圖面，進入既有工作台。遮蔽、便利貼、預覽與匯出沿用案件進度與確認流程。"><Button type="primary" icon={<PlusOutlined/>} onClick={()=>a.go('new')}>建立案件</Button></Heading>
- {s.cases.some(c=>c.files.length)?available.map(({case:c,files})=><Card key={c.id} className="desk-workspace-case" title={<Space><FolderOpenOutlined/>{c.name}</Space>} extra={<Button type="link" onClick={()=>a.openCase(c.id)}>查看案件</Button>}><div className="desk-workspace-files">{files.length?files.map(f=><div key={f.index} className="desk-workspace-file"><Space wrap><FileTextOutlined/><Text>{f.name}</Text><Tag>{f.real?'原始 PDF':'示範圖面'}</Tag></Space><Button type="primary" onClick={()=>a.openWorkspaceFile(c.id,f.index)}>開啟圖面工作台</Button></div>):<Text type="secondary">尚無圖面；請先在案件中匯入 PDF。</Text>}</div></Card>):<Card><Empty description="尚無可編輯圖面，請先建立案件並匯入 PDF"/></Card>}
- <Alert className="desk-below" type="info" showIcon title="編輯與交付" description="可於工作台處理多頁圖面。每頁完成確認後，從案件的成果與匯出頁下載；頁面不另存獨立副本。"/></>;
-}
-const views={dashboard:Dashboard,cases:Cases,'drawing-workspace':DrawingWorkspace,'drawing-editor':IndependentDrawingEditor,case:CaseDetail,export:Export,settings:Settings,appearance:Appearance,new:NewCase,'edit-case':NewCase};
-const icons={dashboard:<AppstoreOutlined/>,cases:<FolderOpenOutlined/>,'drawing-workspace':<EditOutlined/>,'drawing-editor':<FileTextOutlined/>,rules:<FileTextOutlined/>,glossary:<TranslationOutlined/>,approval:<CheckCircleOutlined/>,sq:<DatabaseOutlined/>,settings:<SettingOutlined/>};
-function Navigation({s,a}){const selected=['case','new','edit-case','import','setup','work','review','export'].includes(s.route)?'cases':['appearance','members','ai-settings'].includes(s.route)?'settings':s.route;return <Menu mode="inline" inlineCollapsed={s.collapsed} selectedKeys={[selected]} onClick={({key})=>a.go(key)} items={s.nav.map(([key,_,label])=>({key,icon:icons[key],label:<span>{label}{['glossary','approval','sq'].includes(key)&&<sup title="後續規劃"> *</sup>}</span>}))}/>;}
-let pageRoot=null,navRoot=null,latest=null,actions=null,controlRoots=[];
-function mountNativeControls(s){
- // Bounded compatibility islands. Only stateless action buttons are replaced;
- // canvas, file inputs, form fields, rich text, and their DOM ownership stay native.
- for(const node of document.querySelectorAll('#app > .top .actions button, #app .canvasbar > button, #app .zoom-toolbar > button, #app .pdf-page-nav > button, #app .drawing-confirm-bar button')){
-  const handler=node.onclick;
-  if(!handler)continue;
-  const props={};for(const attr of node.attributes)if(attr.name==='id'||attr.name==='title'||attr.name==='tabindex'||attr.name.startsWith('aria-')||attr.name.startsWith('data-'))props[attr.name==='tabindex'?'tabIndex':attr.name]=attr.value;
-  const host=document.createElement('span');host.className='ant-control-host';node.replaceWith(host);
-  const root=createRoot(host);controlRoots.push(root);
-  root.render(<Provider s={s}><Button {...props} htmlType="button" type={node.classList.contains('primary')||node.classList.contains('confirm-drawing')?'primary':'default'} danger={node.classList.contains('danger-text')} disabled={node.disabled} className={node.className} onClick={e=>handler.call(e.currentTarget,e.nativeEvent)}><span className="ant-native-label" dangerouslySetInnerHTML={{__html:node.innerHTML}}/></Button></Provider>);
- }
- for(const node of document.querySelectorAll('#app .wizard-steps')){
-  const current=[...node.children].findIndex(n=>n.classList.contains('current'));
-  const host=document.createElement('div');host.className='desk-wizard';node.replaceWith(host);const root=createRoot(host);controlRoots.push(root);root.render(<Provider s={s}><Steps current={current} items={['案件資訊','匯入圖面','選擇規則'].map(title=>({title}))}/></Provider>);
- }
-}
-function draw(s){latest=s;if(pageRoot){const Page=views[s.route];if(Page)pageRoot.render(<Provider s={s}><Page s={s} a={actions}/></Provider>);}if(navRoot)navRoot.render(<Provider s={s}><Navigation s={s} a={actions}/></Provider>);}
-window.DrawingDeskAnt={
- mount(s,a){actions=a;document.body.classList.add('antd-enabled');const host=document.querySelector('#antd-page');if(host)pageRoot=createRoot(host);const nav=document.querySelector('#nav');nav.replaceChildren();navRoot=createRoot(nav);flushSync(()=>{draw(s);if(!host)mountNativeControls(s);});},
- update(s){flushSync(()=>draw(s));},updateNav(s){if(navRoot)navRoot.render(<Provider s={s}><Navigation s={s} a={actions}/></Provider>);},
- unmount(){for(const root of controlRoots)root.unmount();controlRoots=[];if(pageRoot){pageRoot.unmount();pageRoot=null;}if(navRoot){navRoot.unmount();navRoot=null;}}
-};
+createRoot(document.getElementById('root')).render(<DrawingEditor/>);

@@ -1,31 +1,13 @@
-報價圖面處理系統 — PDF integration source and third-party notices
+圖面編輯區 — 第三方授權與原始碼
 
-The browser receives the application source directly (no minification/build step):
-  index.html, app.js, style.css, pdf-workspace.js, pdf-worker.js, pdf-engine.js,
-  ai-settings.js, glossary.js, glossary-data.js.
-A copy of this site's source and assets is available at source.zip.
+首頁及圖面編輯器程式：index.html、drawing-editor.html、antd-ui.js、independent-*.js、translation-colors.js。React/Ant Design 原始碼在 src/ui/，由 scripts/build-ui.mjs 建置；無舊案件程式。
 
 MuPDF JavaScript / WASM 1.27.0
 Copyright (C) 2004-2025 Artifex Software, Inc.
-Distributed without modifications under GNU Affero General Public License v3
-or later. Full terms: vendor/mupdf/LICENSE.
-Upstream corresponding source, build instructions and licensing:
-  https://github.com/ArtifexSoftware/mupdf.js
-  https://mupdf.com/licensing/
-The browser binding and WASM are the published mupdf@1.27.0 npm distribution.
-Commercial/closed-source distribution requires review of applicable licensing
-and, where appropriate, a commercial license from Artifex.
+依 GNU Affero General Public License v3 或更新版本發行，完整授權見 vendor/mupdf/LICENSE。上游來源與授權資訊：https://github.com/ArtifexSoftware/mupdf.js 及 https://mupdf.com/licensing/。企業閉源／商業交付須先評估相應授權。
 
-JSZip
-Copyright Stuart Knightley, David Duponchel, Franz Buchinger, Antonio Afonso.
-Distributed under MIT; see vendor/JSZip-LICENSE.
+JSZip：MIT 授權，見 vendor/JSZip-LICENSE。PDF.js 與 pdf-lib 的瀏覽器程式已保存在 vendor/；正式交付前應另行核對其完整第三方授權告知。
 
-PDF processing occurs in a local browser worker. Source PDFs are stored in
-IndexedDB, and case metadata remains in this browser's local storage. No AI
-recognition or cloud PDF upload is enabled by this integration.
+React、React DOM、Ant Design 及其轉相依套件版本見 package-lock.json；完整授權文字見 THIRD_PARTY_UI_LICENSES.txt，建置檔亦保留來源告知。
 
-React / React DOM, Ant Design, Ant Design Icons, Day.js
-Bundled from pinned npm versions (see package.json and package-lock.json).
-Complete dependency license texts: THIRD_PARTY_UI_LICENSES.txt.
-Bundled source notices are also preserved in antd-ui.js.
-UI source: src/ui; build: scripts/build-ui.mjs; bridge: ui-adapter.js.
+圖面和 PNG 僅送往同源本機服務上的 Apple Vision OCR 與 Ollama。私有翻譯庫及圖面檔不納入版控。

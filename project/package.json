@@ -4,17 +4,12 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build-ui.mjs",
-    "test": "node tests/pdf-rotation.mjs && node tests/workflow-state.cjs",
+    "test": "node tests/editor-only.cjs && node tests/independent-pdf.mjs && node tests/independent-editor-operations.mjs",
     "start": "python3 server/local.py",
-    "test:ui": "node tests/antd-ui.cjs && node tests/independent-editor.cjs && node tests/ai-retain.cjs && node tests/ai-list.cjs && node tests/ai-overlay.mjs && node tests/translation-colors.mjs && node tests/independent-editor-operations.mjs && node tests/independent-pdf.mjs"
+    "test:ui": "node tests/editor-only.cjs && node tests/independent-editor.cjs && node tests/ai-retain.cjs && node tests/ai-list.cjs && node tests/ai-overlay.mjs && node tests/translation-colors.mjs && node tests/independent-editor-operations.mjs && node tests/independent-pdf.mjs"
   },
   "dependencies": {
-    "@ant-design/icons": "6.1.0",
     "antd": "6.6.5",
-    "dayjs": "1.11.19",
-    "jszip": "^3.10.1",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^3.11.174",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

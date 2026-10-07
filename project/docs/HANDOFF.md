@@ -1,59 +1,9 @@
-# 接手與內網目標
+# 接手：獨立圖面編輯區
 
-## 本輪已實作
+首頁 (`dist/index.html`) 僅載入 `src/ui/main.jsx` 建置的外框與 `dist/drawing-editor.html`。原案件管理／工作台／設定／詞庫頁面及其檔案已從主程式移除；不要把它們當作仍可呼叫的整合介面。Jack 的檔案尚未提供，因此沒有共享案件格式或合併 API；後續整合先釐清資料生命週期，再建立明確的邊界。
 
-- 同 PDF 指定頁面批次套用遮蔽；預選相同尺寸/方向，保留既有物件且避免重複。
-- 案件級最近25筆編輯快照，無二進位PDF資料。支援旋轉與批次操作整筆復原/重做。
-- 90度旋轉同步遮蔽、備註位置与文字方向。新備註以目前視角正向建立。
-- 最終PDF實體成果用於預覽與匯出，共用最近一份文件快取。
-- 整份連續預覽延遲繪製可見頁；離開可見區釋放圖片。
-- 文件清單可調整寬度，支持鍵盤。
-- 完整案件ZIP備份/還原；本機Python服務持久存案、列出與開啟案件。
+保留的功能：PDF 上傳、遮蔽、便利貼、跨頁編輯、復原／重做、編輯進度暫存、預覽／匯出，以及同源 Apple Vision + Ollama 翻譯（私有術語優先、草稿人工審查）。React 外框僅負責可見的六個操作按鈕；真正的編輯與資料儲存仍在 iframe。兩邊的 DOM 以 `MutationObserver` 同步 disabled，點擊轉送原按鈕。若更改原按鈕 ID，須一併更新橋接與測試。
 
-## 資料契約
+`server/local.py` 僅提供靜態頁、健康檢查及兩個 AI POST API。`local-data/`（含舊 `projects.sqlite3`、ZIP 或私有 `translation-database.json`）與瀏覽器進度不能刪；舊案件 UI/API 已移除，舊資料若需重新存取，請從 Git 歷史或既有備份單獨規劃遷移，切勿直接覆寫。
 
-現有 case.files 暫時仍是一頁一筆，以 sourceId 分組為同一份PDF；不要誤把頁数當文件數。
-頁面包含 id/sourceId/pageIndex/pageCount/width/height/rotation/masks/notes/revision/accepted/status。
-rotation 是相對於原PDF顯示方向的順時針增量。width/height 與物件百分比座標隨旋轉交換。
-備註 textRotation 是文字相對目前頁面方向，0/90/180/270。
-案件 editHistory.past/future 為頁面編輯狀態快照，保留最多25個過去操作。復原不恢復已確認資格。
-備份格式 drawing-desk-project v1：project.json + sources/N.pdf。還原建立新案件與新sourceId；不覆蓋既有案件。
-
-## API（目前僅本機測試）
-
-GET /api/health；GET /api/projects；PUT /api/projects/:id（二進位ZIP）；GET /api/projects/:id。
-SQLite目前是案件備份索引，不是多人共享的正規化業務資料庫。每次另存保留新ZIP版本，舊檔不自動刪除。
-
-## 內網正式化工作（未完成，不能當成已可多人使用）
-
-1. 將資料層抽離：CaseRepository、PdfSourceRepository、ExportArtifactRepository。
-2. 伺服器保存案件/檔案/頁面/物件/確認版本/操作紀錄；API 是共用資料的唯一寫入入口。
-3. 加入真實登入與伺服器權限、TLS、帳號停用、機密資料存取控制。
-4. 每次儲存帶 expectedRevision；同時編輯衝突時拒絕靜默覆寫，提供重新載入或另存版本。
-5. PDF任務排程、取消、超時、每人資源限制。不能直接用現有單一Worker作為多人佇列。
-6. 將舊瀏覽器進度遷移到正式資料庫；保留備份格式版本與升級函式。
-7. 大尺寸PDF需評估分塊繪製/伺服器工作程序。目前仍80MP上限，Electron或內網包裝本身不會解除記憶體限制。
-8. 整理 legacy app/pdf-workspace 中重複函式覆寫，逐模組遷移；不要一次重寫整個UI。
-9. 正式伺服器選型、作業系統、備份政策與 MuPDF 授權確認後再製作部署包。
-
-## 建議夥伴用 Codex 的第一個工作
-
-「依 AGENTS.md 和 docs/HANDOFF.md，先執行現有測試與本機啟動，確認不改UI，提出資料層抽離的最小變更；實作第一版CaseRepository介面及原型儲存適配器，保持現有資料可還原，完成再處理內網API。不得把UI帳號當作真實身份。」
-
-## 2026-10-01 介面更新
-
-- 首頁最近案件依狀態篩選，最多10件；全部案件保留狀態並進入分頁列表。
-- 案件圖面整列支援點擊與 Enter／Space 開啟。
-- 匯出在頁面內呈現進度與失敗原因，完成後由使用者點原生連結下載 ZIP，保留補下載連結。取消不觸發下載；下載要求仍不等於裝置已儲存成功。
-- 匯出規格收納於預設收折的備註；移除圓角容器的左側強調邊條。
-
-- 核對清單以檔案群組呈現，多頁PDF以共用標頭及頁面子項顯示；分頁每20份檔案，不拆散同檔頁面。單頁不顯示連續預覽按鈕。
-
-- 工作台清單隨可用寬度與側欄收合動態調整，保留兩種側欄狀態各自的手動欄寬；上下工具列可自然換行。右側標題為遮蔽區列表、備註色塊列表。
-
-## ZIP 下載修正
-進入匯出頁或變更勾選後自動準備 ZIP，以 CRC32 和 PDF 數量檢查完成後，將匯出按鈕改為原生 download 連結。不要恢復成 await 後的程式自動點擊；下載狀態只在使用者點擊時更新，仍不可宣稱已落盤。合成 PDF 的實際打包、解壓及 PDF 解析已驗證；嵌入式瀏覽器下載權限需於使用者環境驗收。
-
-## Ant Design 第一階段
-
-2026-10-01 已授權並開始 React／Ant Design 遷移。最新介面交接以 docs/ANT_DESIGN.md 為準；PDF 引擎與資料契約不變。成果 ZIP 名稱為案件名稱_NL_台灣下載日期YYYYMMDD.zip。
+在 `project/`：`npm ci && npm run build && npm test && npm run test:ui`；Python 執行 `python3 -m unittest tests.test_editor_only_server tests.test_local_ai -q`。啟動 `python3 server/local.py --port 8766` 做隔離測試，避免中斷仍在 8765 的使用者作業。翻譯環境詳見 `docs/LOCAL_AI.md`；實機驗收詳見 `docs/ACCEPTANCE.md`。瀏覽器在 8766 的進度不等於 8765；不得據此聲稱已保存／清除原來源資料。

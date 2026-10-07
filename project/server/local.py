@@ -1,72 +1,85 @@
-"""Offline single-machine test server. Intentionally binds loopback only."""
-import http.server, json, sqlite3, pathlib, zipfile, io, uuid, datetime, argparse, os, base64, binascii, sys
-sys.path.insert(0,str(pathlib.Path(__file__).resolve().parent))
+"""Offline single-machine editor server. Intentionally binds loopback only."""
+import argparse
+import base64
+import binascii
+import http.server
+import json
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from ocr_local import recognize, OcrError
 from ai_translate import translate, generate_translation, ModelUnavailable, TranslationError
-ROOT=pathlib.Path(__file__).resolve().parents[1]
-DATA=ROOT/'local-data'
-DATA.mkdir(exist_ok=True)
-def db():
- c=sqlite3.connect(DATA/'projects.sqlite3');c.execute('CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT,updated TEXT,path TEXT)');return c
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
- def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT/'dist'),**kw)
- def answer(self,status,data):
-  body=json.dumps(data,ensure_ascii=False).encode();self.send_response(status);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
- def valid_host(self):return self.headers.get('Host','').split(':')[0] in ('localhost','127.0.0.1')
- def do_POST(self):
-  if not self.valid_host() or self.headers.get('Sec-Fetch-Site')=='cross-site':return self.answer(403,{'error':'forbidden'})
-  origin=self.headers.get('Origin')
-  if origin!='http://'+self.headers.get('Host',''):return self.answer(403,{'error':'origin'})
-  if self.path not in ('/api/ai/translate','/api/ai/ocr'):return self.answer(404,{'error':'missing'})
-  try:
-   size=int(self.headers.get('Content-Length','0'))
-   if not 0<size<=9*1024**2:return self.answer(413,{'error':'request size must be 1–9 MB'})
-   if self.headers.get('Content-Type','').split(';')[0].strip()!='application/json':return self.answer(415,{'error':'JSON required'})
-   payload=json.loads(self.rfile.read(size))
-   if not isinstance(payload,dict):raise ValueError('JSON object required')
-   if self.path=='/api/ai/ocr':
-    image=payload.get('image')
-    if not isinstance(image,str) or len(image)>8*1024**2:raise ValueError('image must be base64 PNG up to 6MB')
-    png=base64.b64decode(image,validate=True)
-    return self.answer(200,recognize(png))
-  except (ValueError,TypeError,binascii.Error) as e:return self.answer(400,{'error':str(e)})
-  except OcrError as e:return self.answer(503,{'error':str(e)})
-  try:return self.answer(200,translate(payload,generate_translation))
-  except ValueError as e:return self.answer(400,{'error':str(e)})
-  except ModelUnavailable as e:return self.answer(503,{'error':str(e)})
-  except TranslationError as e:return self.answer(502,{'error':str(e)})
- def do_GET(self):
-  if not self.valid_host():return self.answer(403,{'error':'invalid host'})
-  if self.path=='/api/health':return self.answer(200,{'service':'drawing-desk-local'})
-  if self.path=='/api/projects':
-   with db() as c: rows=c.execute('SELECT id,name,updated FROM projects ORDER BY updated DESC').fetchall()
-   return self.answer(200,[dict(zip(('id','name','updated'),r)) for r in rows])
-  if self.path.startswith('/api/projects/'):
-   from urllib.parse import unquote
-   with db() as c:r=c.execute('SELECT path FROM projects WHERE id=?',(unquote(self.path[14:]),)).fetchone()
-   if not r:return self.answer(404,{'error':'missing'})
-   data=(DATA/r[0]).read_bytes();self.send_response(200);self.send_header('Content-Type','application/zip');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
-  if self.path.startswith('/api/'):return self.answer(404,{'error':'missing'})
-  return super().do_GET()
- def do_PUT(self):
-  if not self.valid_host() or self.headers.get('Sec-Fetch-Site')=='cross-site':return self.answer(403,{'error':'forbidden'})
-  origin=self.headers.get('Origin')
-  if origin and origin!='http://'+self.headers.get('Host'):return self.answer(403,{'error':'origin'})
-  if not self.path.startswith('/api/projects/'):return self.answer(404,{'error':'missing'})
-  try:
-   size=int(self.headers.get('Content-Length','0'))
-   if not 0<size<=1024**3:return self.answer(413,{'error':'size'})
-   data=self.rfile.read(size)
-   with zipfile.ZipFile(io.BytesIO(data)) as z:
-    info=z.getinfo('project.json')
-    if info.file_size>50*1024**2:raise ValueError('manifest too large')
-    m=json.loads(z.read(info))
-    if m.get('format')!='drawing-desk-project' or m.get('version')!=1:raise ValueError('invalid format')
-   from urllib.parse import unquote
-   key=unquote(self.path[14:]);name=str(m['case']['name']);stamp=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-   filename=str(uuid.uuid4())+'.drawing.zip';tmp=DATA/(filename+'.tmp');tmp.write_bytes(data);os.replace(tmp,DATA/filename)
-   with db() as c:c.execute('INSERT OR REPLACE INTO projects VALUES(?,?,?,?)',(key,name,stamp,filename))
-   return self.answer(200,{'saved':True})
-  except Exception as e:return self.answer(400,{'error':str(e)})
-if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8765);a=p.parse_args();print(f'Open http://127.0.0.1:{a.port} — local-only testing',flush=True);http.server.ThreadingHTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(ROOT / 'dist'), **kwargs)
+
+    def answer(self, status, data):
+        body = json.dumps(data, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def valid_host(self):
+        return self.headers.get('Host', '').split(':')[0] in ('localhost', '127.0.0.1')
+
+    def do_POST(self):
+        if not self.valid_host() or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+            return self.answer(403, {'error': 'forbidden'})
+        if self.headers.get('Origin') != 'http://' + self.headers.get('Host', ''):
+            return self.answer(403, {'error': 'origin'})
+        if self.path not in ('/api/ai/translate', '/api/ai/ocr'):
+            return self.answer(404, {'error': 'missing'})
+        try:
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= 9 * 1024**2:
+                return self.answer(413, {'error': 'request size must be 1–9 MB'})
+            if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
+                return self.answer(415, {'error': 'JSON required'})
+            payload = json.loads(self.rfile.read(size))
+            if not isinstance(payload, dict):
+                raise ValueError('JSON object required')
+            if self.path == '/api/ai/ocr':
+                image = payload.get('image')
+                if not isinstance(image, str) or len(image) > 8 * 1024**2:
+                    raise ValueError('image must be base64 PNG up to 6MB')
+                png = base64.b64decode(image, validate=True)
+                return self.answer(200, recognize(png))
+        except (ValueError, TypeError, binascii.Error) as exc:
+            return self.answer(400, {'error': str(exc)})
+        except OcrError as exc:
+            return self.answer(503, {'error': str(exc)})
+        try:
+            return self.answer(200, translate(payload, generate_translation))
+        except ValueError as exc:
+            return self.answer(400, {'error': str(exc)})
+        except ModelUnavailable as exc:
+            return self.answer(503, {'error': str(exc)})
+        except TranslationError as exc:
+            return self.answer(502, {'error': str(exc)})
+
+    def do_GET(self):
+        if not self.valid_host():
+            return self.answer(403, {'error': 'invalid host'})
+        if self.path == '/api/health':
+            return self.answer(200, {'service': 'drawing-desk-local'})
+        if self.path.startswith('/api/'):
+            return self.answer(404, {'error': 'missing'})
+        return super().do_GET()
+
+    def do_PUT(self):
+        return self.answer(404, {'error': 'missing'})
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8765)
+    args = parser.parse_args()
+    print(f'Open http://127.0.0.1:{args.port} — local-only testing', flush=True)
+    http.server.ThreadingHTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
