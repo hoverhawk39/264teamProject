@@ -332,7 +332,7 @@ window.addEventListener('message', event => {
 <script type="module">
 import { exportIndependentPDF } from './independent-pdf-engine.js';
 import { planCrossFileMasks, planStickyNoteCopies, migrateNotePadding } from './independent-editor-operations.js';
-import { sourceCandidates, mapSourceRect, nativeItemRect, mergeDrafts, exportableNotes, noteNeedsReview, parseGlossary, translateInBatches } from './independent-ai-overlay.js';
+import { sourceCandidates, mapSourceRect, nativeItemRect, mergeDrafts, exportableNotes, noteNeedsReview, translateInBatches } from './independent-ai-overlay.js';
 import {TRANSLATION_RED, colorAt, colorSegments, recolorRange, adjustColorRuns} from './translation-colors.js';
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.js';
 
@@ -391,10 +391,9 @@ const aiTranslations=document.getElementById('aiTranslations');
 const aiTranslationsList=document.getElementById('aiTranslationsList');
 let stopAiRequested=false;
 stopAiBtn.onclick=()=>{stopAiRequested=true;stopAiBtn.disabled=true;stopAiBtn.textContent='正在完成目前批次…';};
-// Keep saved glossary data compatible without exposing a glossary editor.
-let savedGlossaryText = '';
-try { savedGlossaryText = localStorage.getItem(GLOSSARY_KEY) || ''; }
-catch (error) { progressMessage.textContent = '無法讀取本機翻譯詞彙表：' + error.message; }
+// Retire only the former glossary key; never erase editor progress or notes.
+try { localStorage.removeItem(GLOSSARY_KEY); }
+catch (error) { progressMessage.textContent = '無法刪除舊翻譯對照：' + error.message; }
 let restoring = false, saving = false, maskInteraction = null;
 let busy = false;
 function setBusy(value) {
@@ -607,7 +606,6 @@ aiTranslateBtn.onclick = async () => {
   setBusy(true);
   aiFailures.hidden=true;aiFailures.open=false;aiFailuresList.replaceChildren();
   try {
-    const glossary = parseGlossary(savedGlossaryText);
     const pdf = await getPdf(file);
     const pages = [], items = [];
     for (let index=0;index<file.pages.length;index++) {
@@ -622,16 +620,16 @@ aiTranslateBtn.onclick = async () => {
       progressMessage.textContent = '沒有新的可翻譯非中文文字；尺寸、公差、料號及單位已排除。';
       return;
     }
-    progressMessage.textContent = `AI 翻譯：${items.length} 筆文字…`;
+    progressMessage.textContent = `資料庫優先／地端 AI 翻譯：${items.length} 筆文字…`;
     stopAiRequested=false;stopAiBtn.disabled=false;
     stopAiBtn.textContent='完成目前翻譯批次並檢查草稿';stopAiBtn.hidden=false;
     const sourceById=new Map(pages.flatMap((found,index)=>found.blocks.map(block=>[block.id,{block,found,index}])));
     const warnings=pages.flatMap((found,index)=>found.warnings.map(w=>`第 ${index+1} 頁：${w}`));
     const failures=[];
     let count=0,review=0,completed=0;
-    const status=()=>`AI 翻譯：${completed} / ${items.length} 筆；已新增 ${count} 張黑底白字草稿；${failures.length} 筆失敗待人工處理。`;
+    const status=()=>`資料庫優先／地端 AI：${completed} / ${items.length} 筆；已新增 ${count} 張透明底紅字草稿；${failures.length} 筆失敗待人工處理。`;
     try {
-      await translateInBatches(items,glossary,aiPost,(done)=>{completed=done;progressMessage.textContent=status();},batch=>{
+      await translateInBatches(items,{},aiPost,(done)=>{completed=done;progressMessage.textContent=status();},batch=>{
         const before=snapshot(file);
         let added=0;
         for(const item of batch) {

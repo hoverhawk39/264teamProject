@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import struct
 import threading
+import tempfile
 import unittest
 from unittest.mock import patch
 from http.server import ThreadingHTTPServer
@@ -19,6 +20,15 @@ spec.loader.exec_module(local)
 
 
 class LocalAiTest(unittest.TestCase):
+    def setUp(self):
+        # Synthetic, deterministic terms keep tests independent of private local-data.
+        terms = {'lead in': {'導引'}, 'guide pin': {'導梢', '導銷'},
+                 'greater than 1.66': {'>1.66', '>1.67'},
+                 'wide': {'寬'}, 'deep': {'深'}}
+        glossary_patch = patch('ai_translate.database_terms', return_value=terms)
+        glossary_patch.start()
+        self.addCleanup(glossary_patch.stop)
+
     @classmethod
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), local.Handler)
@@ -79,24 +89,23 @@ class LocalAiTest(unittest.TestCase):
         self.assertTrue(0 < block['confidence'] <= 1, block)
 
     def test_translation_protects_glossary_dimensions_and_ids(self):
-        text = 'EJECTOR PIN Ø12 ±0.05 mm PART-123'
+        text = 'CUSTOM COMPONENT Ø12 ±0.05 mm PART-123'
         with patch.object(local, 'generate_translation', return_value='ZXQ0QXZ ZXQ1QXZ ZXQ2QXZ') as model:
             code, data = self.request('/api/ai/translate', {
-                'items': [{'id': 'note-1', 'text': text}], 'glossary': {'EJECTOR PIN': '頂針'}
+                'items': [{'id': 'note-1', 'text': text}], 'glossary': {'CUSTOM COMPONENT': '自訂元件'}
             })
         self.assertEqual(code, 200, data)
         self.assertEqual(data['items'][0]['text'], text)
-        self.assertEqual(data['items'][0]['translation'], '頂針 Ø12 ±0.05 mm PART-123')
+        self.assertEqual(data['items'][0]['translation'], '自訂元件 Ø12 ±0.05 mm PART-123')
         self.assertIn('protected', data['items'][0]['warning'].lower())
-        self.assertNotIn('Ø12', model.call_args.args[0])
-        self.assertNotIn('PART-123', model.call_args.args[0])
+        model.assert_not_called()  # Every span is protected; no Ollama call needed.
 
     def test_invalid_model_output_isolated_per_item_without_fabricated_note(self):
         with patch.object(local, 'generate_translation', side_effect=['保留譯文', 'STILL ENGLISH', '另一譯文']):
             code, data = self.request('/api/ai/translate', {'items': [
-                {'id': 'ok-1', 'text': 'Finish surface'},
-                {'id': 'bad', 'text': 'Draw polish'},
-                {'id': 'ok-2', 'text': 'Remove burrs'},
+                {'id': 'ok-1', 'text': 'Please inspect item'},
+                {'id': 'bad', 'text': 'Please verify item'},
+                {'id': 'ok-2', 'text': 'Please check item'},
             ]})
         self.assertEqual(code, 200, data)
         self.assertEqual([item['id'] for item in data['items']], ['ok-1', 'bad', 'ok-2'])
@@ -133,7 +142,7 @@ class LocalAiTest(unittest.TestCase):
         self.assertEqual(data['items'][0]['translation'].count('.01'), 2)
         self.assertIn('寬', data['items'][0]['translation'])
         self.assertIn('深', data['items'][0]['translation'])
-        self.assertGreaterEqual(len(calls), 3)
+        self.assertGreaterEqual(len(calls), 1, 'unmatched connective still reaches the model')
 
     def test_rejects_bad_translation_payload_without_model_call(self):
         with patch.object(local, 'generate_translation') as model:
@@ -155,12 +164,53 @@ class LocalAiTest(unittest.TestCase):
         self.assertRegex(data['items'][0]['translation'], '[\u3400-\u9fff]')
 
     def test_live_model_preserves_dimension_and_glossary(self):
-        source = 'EJECTOR PIN Ø12 ±0.05 mm'
+        source = 'LEAD IN Ø12 ±0.05 mm'
         code, data = self.request('/api/ai/translate', {
-            'items': [{'id': 'tech', 'text': source}], 'glossary': {'EJECTOR PIN': '頂針'}
+            'items': [{'id': 'tech', 'text': source}], 'glossary': {}
         })
         self.assertEqual(code, 200, data)
-        self.assertEqual(data['items'][0]['translation'], '頂針 Ø12 ±0.05 mm')
+        self.assertEqual(data['items'][0]['translation'], '導引 Ø12 ±0.05 mm')
+
+    def test_customer_database_exact_precedes_model_and_ambiguous_falls_back(self):
+        with patch.object(local, 'generate_translation', return_value='需人工確認') as model:
+            code, data = self.request('/api/ai/translate', {'items': [
+                {'id': 'unique', 'text': '  LEAD IN  '},
+                {'id': 'ambiguous', 'text': 'GUIDE PIN'},
+                {'id': 'mistake', 'text': 'GREATER THAN 1.66'},
+                {'id': 'unknown', 'text': 'Please inspect item'},
+            ], 'glossary': {}})
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data['items'][0]['translation'], '導引')
+        self.assertEqual(data['items'][0]['source'], 'database')
+        self.assertEqual([item['translation'] for item in data['items'][1:]], ['需人工確認'] * 3)
+        self.assertEqual(model.call_count, 3)
+
+    def test_customer_database_phrase_keeps_unique_term_without_model_rewriting(self):
+        with patch.object(local, 'generate_translation', return_value='ZXQ0QXZ 前請仔細檢查') as model:
+            code, data = self.request('/api/ai/translate', {'items': [
+                {'id': 'phrase', 'text': 'Inspect LEAD IN carefully'}
+            ]})
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data['items'][0]['translation'], '導引 前請仔細檢查')
+        self.assertIn('ZXQ0QXZ', model.call_args.args[0])
+        self.assertNotIn('LEAD IN', model.call_args.args[0])
+
+    def test_importer_preserves_collisions_without_picking_first_row(self):
+        from server import import_translation_database as importer
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / 'sample.csv'
+            output = pathlib.Path(directory) / 'database.json'
+            header = ['編號', 'Chinese\n中文', 'English 1\n英文 1'] + ['English'] * 14
+            rows = [header, ['', '導梢', 'GUIDE PIN'] + [''] * 14,
+                    ['', '導銷', 'GUIDE PIN'] + [''] * 14]
+            import csv
+            with source.open('w', newline='', encoding='utf-8') as stream:
+                csv.writer(stream).writerows(rows)
+            with patch.object(importer, 'OUTPUT', output):
+                importer.import_csv(source)
+            entries = json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual([entry['zh'] for entry in entries], ['導梢', '導銷'])
+            self.assertEqual([entry['en'] for entry in entries], [['GUIDE PIN']] * 2)
 
     def test_unit_without_number_is_protected_in_mixed_text(self):
         with patch.object(local, 'generate_translation', return_value='單位 ZXQ0QXZ') as model:

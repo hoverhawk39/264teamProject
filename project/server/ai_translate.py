@@ -2,8 +2,10 @@
 import http.client
 import json
 import os
+import pathlib
 import re
 import threading
+from functools import lru_cache
 
 MODEL = os.environ.get('GAM264_OLLAMA_MODEL', 'gemma3:4b')
 MODEL_SLOTS = threading.BoundedSemaphore(2)
@@ -20,6 +22,42 @@ UNIT = r'(?<![\w])(?:mm|cm|µm|um|kg|inch)(?![\w])'
 COUNT = r'(?<![\w])\d+[xX](?![\w])'
 TOKEN = re.compile(PART + '|' + COUNT + '|' + DIMENSION + '|' + UNIT, re.IGNORECASE)
 PLACEHOLDER = re.compile(r'ZXQ\d+QXZ')
+DATABASE_PATH = pathlib.Path(__file__).resolve().parents[1] / 'local-data/translation-database.json'
+
+
+def database_terms():
+    try:
+        return _database_terms_at_mtime(DATABASE_PATH.stat().st_mtime_ns)
+    except FileNotFoundError as exc:
+        raise TranslationError('translation database missing; import the customer CSV first') from exc
+
+
+@lru_cache(maxsize=2)
+def _database_terms_at_mtime(_mtime_ns):
+    """Reload when the private database changes, without a server restart."""
+    try:
+        with DATABASE_PATH.open(encoding='utf-8') as stream:
+            entries = json.load(stream)
+    except (ValueError, OSError) as exc:
+        raise TranslationError('translation database is unreadable or invalid') from exc
+    if not isinstance(entries, list):
+        raise TranslationError('translation database is invalid')
+    terms = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get('zh'), str) or not isinstance(entry.get('en'), list):
+            raise TranslationError('translation database is invalid')
+        for source in entry['en']:
+            if not isinstance(source, str) or not source.strip():
+                raise TranslationError('translation database is invalid')
+            terms.setdefault(source.strip().casefold(), set()).add(entry['zh'].strip())
+    return terms
+
+
+@lru_cache(maxsize=4)
+def term_matcher(db_keys, glossary_keys):
+    patterns = [r'(?<!\w)' + re.escape(term) + r'(?!\w)' for term in db_keys]
+    return re.compile('|'.join([PART, COUNT, *patterns,
+                                *[re.escape(term) for term in glossary_keys], DIMENSION, UNIT]), re.IGNORECASE)
 
 
 class TranslationError(Exception):
@@ -84,29 +122,53 @@ def validate_payload(payload):
     return items, glossary
 
 
-def translate_one(entry, glossary, model_call):
+def translate_one(entry, glossary, model_call, terms=None):
     text = entry['text']
     result = {'id': entry['id'], 'text': text}
+    if PLACEHOLDER.search(text):
+        raise ValueError('text contains reserved placeholder sequence')
+    # An exact, unambiguous database match never calls Ollama. Ambiguous source
+    # spellings must fall through to the model rather than using row order.
+    choices = (terms or {}).get(text.strip().casefold(), set())
+    if len(choices) == 1:
+        return {**result, 'translation': next(iter(choices)), 'source': 'database',
+                'warning': 'Database translation; review against original.'}
     if not text.strip() or HAN.fullmatch(text.strip()):
         return {**result, 'translation': text, 'skipped': True, 'warning': 'Already Chinese or empty; kept original.'}
     if TOKEN.fullmatch(text.strip()):
         return {**result, 'translation': text, 'skipped': True, 'warning': 'Protected dimension, tolerance, unit or identifier; kept original.'}
     # Longest glossary terms first; part/dimension protection is applied across remaining text.
-    terms = sorted(glossary, key=len, reverse=True)
-    matcher = re.compile('|'.join([re.escape(term) for term in terms] + [PART, COUNT, DIMENSION, UNIT]), re.IGNORECASE)
+    glossary_keys = sorted(glossary, key=len, reverse=True)
+    db_terms = terms or {}
+    # Include ambiguous spellings in the longest-first match to prevent a
+    # shorter unique term from winning inside an ambiguous phrase.
+    db_keys = sorted(db_terms, key=len, reverse=True)
+    matcher = term_matcher(tuple(db_keys), tuple(glossary_keys))
     protected = []
+    ambiguous = []
+    database_matches = []
     def replace(match):
         value = match.group()
-        translated = next((glossary[term] for term in terms if term.casefold() == value.casefold()), value)
+        db_match = db_terms.get(value.casefold())
+        if db_match and len(db_match) > 1:
+            ambiguous.append(value)
+            return value
+        if db_match:
+            database_matches.append(value)
+        translated = (next(iter(db_match)) if db_match else
+                      next((glossary[term] for term in glossary_keys if term.casefold() == value.casefold()), value))
         key = 'ZXQ' + str(len(protected)) + 'QXZ'
         protected.append((key, translated))
         return key
     masked = matcher.sub(replace, text)
     if not protected and not NON_HAN_LETTER.search(masked):
         return {**result, 'translation': text, 'skipped': True, 'warning': 'No translatable non-Chinese text; kept original.'}
-    if PLACEHOLDER.search(text):
-        raise ValueError('text contains reserved placeholder sequence')
-    generated = model_call(masked)
+    if protected and not ambiguous and not NON_HAN_LETTER.search(PLACEHOLDER.sub('', masked)):
+        generated = masked
+        if database_matches:
+            result['source'] = 'database'
+    else:
+        generated = model_call(masked)
     expected = [key for key, _ in protected]
     if PLACEHOLDER.findall(generated) != expected or any(generated.count(key) != 1 for key in expected):
         # A local model may edit marker spelling. Retry only the unprotected
@@ -134,15 +196,18 @@ def translate_one(entry, glossary, model_call):
     result['warning'] = 'Unverified technical terminology; review against original.'
     if protected:
         result['warning'] += ' Protected glossary terms and/or dimensions, tolerances, units, identifiers.'
+    if ambiguous:
+        result['warning'] += ' Ambiguous database term(s) sent to Ollama: ' + ', '.join(dict.fromkeys(ambiguous))
     return result
 
 
 def translate(payload, model_call=generate_translation):
     items, glossary = validate_payload(payload)
+    terms = database_terms()
     results = []
     for item in items:
         try:
-            results.append(translate_one(item, glossary, model_call))
+            results.append(translate_one(item, glossary, model_call, terms))
         except TranslationError as exc:
             # A rejected model output is not a translation. Keep the original
             # identifier and reason so the editor can flag the source for review.
