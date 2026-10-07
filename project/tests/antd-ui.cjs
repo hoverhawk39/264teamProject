@@ -8,6 +8,7 @@ const channels=[];const w=dom.window;w.MessageChannel=class extends require("wor
 const ctx=dom.getInternalVMContext();const run=s=>vm.runInContext(s,ctx);
 for(const src of [...w.document.querySelectorAll('script[src]')].map(x=>x.getAttribute('src')))vm.runInContext(fs.readFileSync('dist/'+src.split('?')[0],'utf8'),ctx,{filename:src});
 const pause=()=>new Promise(r=>setTimeout(r,35));
+const waitFor=async predicate=>{for(let i=0;i<60;i++){if(predicate())return;await pause();}assert.fail('Timed out waiting for async route transition')};
 const text=()=>w.document.querySelector('#app').textContent;
 (async()=>{
  await pause();assert(w.document.querySelector('.ant-menu'));assert(w.document.querySelector('.ant-statistic'));assert(text().includes('最近案件'));
@@ -36,10 +37,18 @@ const text=()=>w.document.querySelector('#app').textContent;
  run('DrawingDeskUI.actions.page(2)');await pause();assert.equal(w.document.querySelectorAll('.ant-table-tbody .ant-table-row').length,2);
  const search=w.document.querySelector('input[aria-label="搜尋案件"]');search.focus();run("DrawingDeskUI.actions.filters({query:'案件22'})");await pause();assert.equal(w.document.activeElement,search);assert.equal(w.document.querySelectorAll('.ant-table-tbody .ant-table-row').length,1);
  run("DrawingDeskUI.actions.openCase('test-22')");await pause();assert(text().includes('圖面處理清單'));w.document.querySelector('.ant-table-tbody .ant-table-row').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await pause();assert.equal(run('route'),'work');assert(w.document.querySelector('#drawingViewport'));assert(w.document.querySelector('.canvasbar .ant-btn'));const noteButton=[...w.document.querySelectorAll('.canvasbar .ant-btn')].find(b=>b.textContent.includes('備註色塊'));assert(noteButton);noteButton.click();await pause();assert.equal(run('file().notes.length'),1);assert.equal(run('file().accepted'),false);
- run("go('new')");await pause();assert(w.document.querySelector('.ant-form'));w.document.querySelector('.ant-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,150));assert.equal(run('route'),'import');assert(run('current().name').length>0);
+ run("go('new')");await pause();assert(w.document.querySelector('.ant-form'));w.document.querySelector('.ant-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await waitFor(()=>run('route')==='import');assert.equal(run('route'),'import');assert(run('current().name').length>0);
  run("wizardDraft=null;cid='test-22';go('export')");await pause();assert(text().includes('成果與匯出'));assert(w.document.querySelector('.ant-collapse'));
  run("pdfPreparedDownload={caseId:cid,url:'blob:https://test.example/test',name:pdfZipName(current()),size:100,requested:false,files:[],selectionKey:exportSelectionKey()};render()");await pause();const link=w.document.querySelector('#exportSelected');assert.equal(link.tagName,'A');assert(link.download.includes('_NL_'));assert.equal(link.getAttribute('href'),'blob:https://test.example/test');
  run("pdfPreparedDownload.pdfSizes=[{name:'large_NL.pdf',bytes:200000}];render()");await pause();w.confirm=()=>false;const oversizedLink=w.document.querySelector('#exportSelected');assert.equal(oversizedLink.dispatchEvent(new w.MouseEvent('click',{bubbles:true,cancelable:true})),false,'declining 100KB warning must prevent native download');assert.equal(run('pdfPreparedDownload.requested'),false);
+ run("go('drawing-editor')");await pause();
+ const editorHeadingButtons=()=>[...w.document.querySelectorAll('#antd-page .desk-heading button')];
+ const previewHeading=editorHeadingButtons().find(b=>b.textContent==='預覽本檔完工圖');
+ assert(previewHeading,'preview is visible in the React header');
+ assert.equal(editorHeadingButtons().indexOf(previewHeading)+1,editorHeadingButtons().findIndex(b=>b.textContent==='暫存目前進度'));
+ const editorSource=fs.readFileSync('src/ui/main.jsx','utf8');
+ assert.match(editorSource,/\['undoBtn','redoBtn','clearProgressBtn','previewBtn','saveProgressBtn','exportBtn'\]/,'preview readiness is observed by the iframe bridge');
+ assert.match(editorSource,/disabled=\{!controls\.preview\} onClick=\{\(\)=>run\('previewBtn'\)\}/,'React header forwards preview action');
  run("go('drawing-workspace')");await pause();assert.equal(run('route'),'drawing-workspace');assert(text().includes('圖面編輯工作區'));assert(w.document.querySelector('.desk-workspace-file'));assert([...w.document.querySelectorAll('#nav .ant-menu-item')].some(n=>n.textContent.includes('圖面編輯工作區')));
  const workspaceButton=w.document.querySelector('.desk-workspace-file button');workspaceButton.click();await pause();assert.equal(run('route'),'work');assert(w.document.querySelector('#drawingViewport'));
  const colorButtons=[...w.document.querySelectorAll('.editor-note-color')];assert.equal(colorButtons.length,3,'three quick colors');colorButtons[0].click();await pause();assert.equal(run('file().notes.at(-1).color'),'#FFF1AE');

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {planCrossFileMasks,migrateNotePadding} from '../dist/independent-editor-operations.js';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {planCrossFileMasks,planStickyNoteCopies,migrateNotePadding} from '../dist/independent-editor-operations.js';
 const makePage=(width,height,rotation=0)=>({origW:900,origH:Math.round(900*height/width),pdfW:width,pdfH:height,rotation,bakedRects:[],pendingRects:[],stickyNotes:[]});
 const source=makePage(200,100);
 source.pendingRects=[{x:90,y:60,w:180,h:120}];
@@ -42,4 +44,52 @@ assert.deepEqual(stored.files[0].history[0].pages[0].stickyNotes[0],{padding:4,h
 assert.deepEqual(stored.files[0].future[0].pages[0].stickyNotes[0],{padding:5,h:60,manualH:60});
 migrateNotePadding(stored);
 assert.equal(stored.files[0].pages[0].stickyNotes[0].padding,3,'padding migration is idempotent');
-console.log('PASS: cross-file planning and one-time existing-note padding migration');
+const stickySource=makePage(200,100);
+stickySource.stickyNotes=[{id:'chosen',x:75,y:45,w:90,h:30,fontSize:12,padding:3,color:'#fff',text:'便利貼文字'},
+  {id:'ai',x:0,y:0,w:40,h:40,aiStatus:'confirmed'}];
+const samePage=makePage(200,100);
+const otherSize=makePage(100,100);
+const rotatedSame=makePage(100,200,90);
+const stickyFiles=[{pages:[samePage,stickySource,otherSize]},{pages:[rotatedSame,makePage(200,100)]},{pages:[otherSize]}];
+const within=planStickyNoteCopies(stickyFiles,0,1,'chosen','file');
+assert.deepEqual(within.map(entry=>[entry.fileIndex,entry.pageIndex]),[[0,0],[0,2]],'copies only to other pages of the active file');
+assert.deepEqual(within[0].rect,{x:75,y:45,w:90,h:30},'matching page keeps placement and size');
+assert.deepEqual(within[1].rect,{x:0,y:0,w:180,h:60},'different size anchors top-left and preserves physical size');
+const across=planStickyNoteCopies(stickyFiles,0,1,'chosen','other-first-pages');
+assert.deepEqual(across.map(entry=>[entry.fileIndex,entry.pageIndex]),[[1,0],[2,0]],'only other files’ first pages');
+assert.deepEqual(across[0].rect,{x:150,y:90,w:180,h:60},'rotated matching physical size scales raster coordinates');
+assert.equal(across[0].scale,2);
+assert.deepEqual(across[1].rect,{x:0,y:0,w:180,h:60});
+assert.deepEqual(planStickyNoteCopies(stickyFiles,0,1,'ai','file'),[],'translation stickers are not eligible');
+assert.deepEqual(planStickyNoteCopies(stickyFiles,0,1,'chosen','invalid'),[]);
+assert.equal(stickyFiles[0].pages[0].stickyNotes.length,0,'planning leaves destinations unchanged; repeated action can append again');
+const editorHtml=fs.readFileSync(new URL('../dist/drawing-editor.html',import.meta.url),'utf8');
+const batchCode=editorHtml.slice(editorHtml.indexOf('function copySelectedStickyNotes('),editorHtml.indexOf('applyBtn.onclick ='));
+const actualFiles=stickyFiles.map((file,index)=>({pages:file.pages.map(page=>({...page,stickyNotes:page.stickyNotes.map(note=>({...note}))})),
+  pageIndex:index===0?1:0,originalImageData:{},marked:true,history:[]}));
+actualFiles[0].stickyNotes=actualFiles[0].pages[1].stickyNotes;
+const buttons={};let refreshes=0;
+const context={state:{currentIndex:0,files:actualFiles},selectedNoteId:'chosen',busy:false,restoring:false,
+  planStickyNoteCopies,crypto:{randomUUID:()=>`group-${refreshes}`},noteSequence:10,
+  remember:file=>file.history.push({pages:JSON.parse(JSON.stringify(file.pages)),marked:file.marked}),
+  refreshEditor:()=>{refreshes++},progressMessage:{textContent:''},
+  batchStickyFileBtn:buttons.file={},batchStickyOtherBtn:buttons.other={}};
+vm.runInNewContext(batchCode,context);
+buttons.file.onclick();
+assert.equal(actualFiles[0].pages[0].stickyNotes.length,1);
+assert.equal(actualFiles[0].pages[2].stickyNotes.length,1);
+assert.equal(actualFiles[0].pages[0].stickyNotes[0].text,'便利貼文字');
+assert.equal(actualFiles[0].pages[0].stickyNotes[0].id,'note-11');
+assert.equal(actualFiles[0].pages[2].stickyNotes[0].fontSize,24);
+assert.equal(actualFiles[0].history.length,1,'one snapshot covers all pages in a file');
+buttons.file.onclick();
+assert.equal(actualFiles[0].pages[0].stickyNotes.length,2,'repeat clicks create separate copies');
+buttons.other.onclick();
+assert.equal(actualFiles[1].pages[0].stickyNotes.length,1);
+assert.equal(actualFiles[1].pages[1].stickyNotes.length,0);
+assert.equal(actualFiles[2].pages[0].stickyNotes.length,1);
+assert.deepEqual([...actualFiles[0].history.at(-1).crossBatchGroup.members],[0,1,2],
+  'cross-file undo tracks the source and all target files');
+assert.equal(actualFiles[1].history.at(-1).crossBatchGroup.id,actualFiles[0].history.at(-1).crossBatchGroup.id);
+assert.equal(refreshes,3);
+console.log('PASS: cross-file planning, sticky-note batch execution and note padding migration');

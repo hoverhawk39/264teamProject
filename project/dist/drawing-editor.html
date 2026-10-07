@@ -98,18 +98,24 @@
     position: absolute; background: #ffeb3b; border-style: solid; border-color: #111;
     color: #111; pointer-events: auto; z-index: 2; cursor: grab; touch-action: none;
   }
-  .sticky-note.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sticky-note.selected, .sticky-note.ai-review.selected { outline: 3px solid #1677ff; outline-offset: 2px; }
+  .sticky-note.ai-note { background:transparent; color:#e03024; border-color:transparent; border-radius:0; }
+  .ai-note .sticky-text { color:transparent !important; caret-color:#e03024; z-index:1; }
+  .ai-colored-text { position:absolute; display:block; margin:0; padding:0; overflow:hidden; pointer-events:none;
+    font-family:var(--sans); line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; word-break:normal; }
+  .ai-note .sticky-resize { background:#fff; }
+  .ai-note.ai-review { outline:2px dashed #e69b00; outline-offset:2px; }
+  .ai-note .ai-note-delete { display:none; }
+  .ai-note.selected .ai-note-delete { display:flex; }
+  .ai-glossary { position:absolute; z-index:30; background:#fff; border:1px solid var(--line); padding:12px; box-shadow:0 6px 20px #0003; width:280px; }
+  .ai-glossary[hidden] { display:none; }
+  .ai-glossary textarea { width:100%; height:110px; resize:vertical; font:12px/1.5 monospace; }
+  .ai-glossary label { display:block; font-size:12px; margin-bottom:6px; }
   .sticky-text {
     position: absolute; display: block; margin: 0; padding: 0; border: 0; outline: 0;
     resize: none; overflow: hidden; background: transparent; color: #111; cursor: text;
     font-family: var(--sans); line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .sticky-delete {
-    position: absolute; top: -10px; right: -10px; z-index: 5; width: 20px; height: 20px;
-    padding: 0; border: 1px solid #111; border-radius: 50%; background: #fff; color: #111;
-    font: 700 14px/18px var(--sans); display: flex; align-items: center; justify-content: center;
-  }
-  .sticky-delete:hover:not(:disabled) { background: #111; border-color: #111; color: #fff; }
   .sticky-drag-handle {
     position: absolute; top: 0; left: 6px; right: 12px; height: 6px; cursor: grab;
     user-select: none; touch-action: none; pointer-events: auto;
@@ -131,10 +137,10 @@
   .finished-label { flex-shrink: 0; background: #7137a8; color: #ffeb3b; padding: 4px 6px; font-size: 11px; }
   .mask-layer { position: absolute; inset: 0; pointer-events: none; }
   .mask-box { position: absolute; pointer-events: auto; outline: 1px dashed #5ea8ff; cursor: grab; touch-action: none; }
-  .mask-delete { position:absolute; top:-10px; right:-10px; z-index:5; width:20px; height:20px;
+  .mask-delete,.sticky-delete,.ai-note-delete { position:absolute; top:-10px; right:-10px; z-index:5; width:20px; height:20px;
     padding:0; border:1px solid #111; border-radius:50%; background:#fff; color:#111;
     font:700 14px/18px var(--sans); display:flex; align-items:center; justify-content:center; cursor:pointer; }
-  .mask-delete:hover { background:#111; color:#fff; }
+  .mask-delete:hover,.sticky-delete:hover:not(:disabled),.ai-note-delete:hover:not(:disabled) { background:#111; color:#fff; border-color:#111; }
   .mask-box .sticky-resize { pointer-events: auto; }
   #progressMessage { font-size: 12px; color: #ff4d4d; width: 100%; }
   .empty { margin: auto; text-align: center; color: var(--ink-dim); font-size: 13px; }
@@ -199,6 +205,24 @@
   header { padding:0; border:0; display:block; background:transparent; }
   .header-actions[hidden],.toolbar[hidden],#progressMessage:empty { display:none; }
   #progressMessage:not(:empty) { padding:8px 16px; background:#fff; border-bottom:1px solid var(--panel-edge); }
+  #stopAiBtn { margin:6px 16px; padding:5px 12px; border:1px solid var(--panel-edge); background:#fff; color:#172d45; cursor:pointer; }
+  #stopAiBtn[hidden],#aiFailures[hidden] { display:none; }
+  #aiFailures { padding:6px 16px; background:#fff; border-bottom:1px solid var(--panel-edge); font-size:12px; }
+  #aiFailures summary { cursor:pointer; }
+  #aiFailures ol { max-height:160px; overflow:auto; margin:6px 0; padding-left:24px; }
+  #aiTranslations[hidden] { display:none; }
+  #aiTranslations { padding:6px 16px; background:#fff; border-bottom:1px solid var(--panel-edge); font-size:12px; flex-shrink:0; }
+  #aiTranslations summary { cursor:pointer; }
+  #aiTranslationsList { max-height:min(28vh,240px); overflow:auto; margin:6px 0 0; border:1px solid var(--panel-edge); border-radius:4px; }
+  .ai-translation-row { display:flex; align-items:center; gap:12px; padding:7px 9px; border-bottom:1px solid var(--panel-edge); cursor:pointer; min-width:0; }
+  .ai-translation-row:last-child { border-bottom:0; }
+  .ai-translation-row:hover,.ai-translation-row:focus-visible,.ai-translation-row.selected { background:#e8f2ff; }
+  .ai-page { flex:none; min-width:48px; }
+  .ai-source,.ai-translation { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ai-translation-actions { display:flex; gap:5px; flex:none; margin-left:auto; }
+  .ai-translation-actions button { color:#fff; border:0; padding:5px 9px; white-space:nowrap; }
+  .ai-retain { background:#23834b; }.ai-delete { background:#c93636; }
+  .ai-translation-actions button:hover:not(:disabled) { filter:brightness(.85); }
   .toolbar { width:100%; justify-content:flex-start; flex-shrink:0; border-top:1px solid var(--panel-edge); }
   body.busy .toolbar { pointer-events:none; opacity:.65; }
   main { min-height:0; }
@@ -220,12 +244,18 @@ window.addEventListener('message', event => {
 <body>
 <header>
   <div class="header-actions" hidden>
+    <button id="undoBtn" disabled>復原</button>
+    <button id="redoBtn" disabled>重做</button>
     <button id="clearProgressBtn">清除進度且重新作業</button>
+    <button class="primary" id="previewBtn" disabled>預覽本檔完工圖</button>
     <button class="primary" id="saveProgressBtn" disabled>暫存目前進度</button>
     <button class="primary" id="exportBtn" disabled>匯出所有完工圖</button>
   </div>
 </header>
 <div id="progressMessage" role="status" aria-live="polite"></div>
+<button id="stopAiBtn" type="button" hidden>完成目前翻譯批次並檢查草稿</button>
+<details id="aiFailures" hidden><summary>模型拒絕項目（待人工處理）</summary><ol id="aiFailuresList"></ol></details>
+<details id="aiTranslations" hidden><summary>本檔 AI 翻譯</summary><div id="aiTranslationsList"></div></details>
 <main>
   <aside>
     <label class="upload-zone" id="uploadZone">
@@ -248,15 +278,26 @@ window.addEventListener('message', event => {
             <button type="button" data-color="#a9dcff" style="background:#a9dcff">淺藍色</button>
           </div>
         </div>
+        <button class="primary" id="batchStickyFileBtn" disabled>批次處理便利貼（套用檔內）</button>
+        <button class="primary" id="batchStickyOtherBtn" disabled>批次處理便利貼（套用餘檔首頁）</button>
         <button class="primary" id="fontGrowBtn" disabled>字放大</button>
         <button class="primary" id="fontShrinkBtn" disabled>字縮小</button>
-        <button class="primary" id="undoBtn" disabled>復原</button>
-        <button class="primary" id="redoBtn" disabled>重做</button>
         <button class="primary" id="resetBtn">全部重新框選</button>
         <button class="primary" id="applyBtn" disabled>遮蓋</button>
         <button class="primary" id="batchBtn" disabled title="將本頁遮蓋區域按比例套用至此 PDF 所有頁面">批次遮蓋（套用檔內）</button>
         <button class="primary" id="batchOtherBtn" disabled title="將紅框按比例套用到其他 PDF 首頁；同尺寸直接遮蔽，不同尺寸僅放紅框">批次遮蓋（套用餘檔首頁）</button>
-        <button class="primary" id="previewBtn" disabled>預覽完工圖</button>
+        <button class="primary" id="aiTranslateBtn" disabled>翻譯本檔全部頁面</button>
+        <button class="primary" id="addTranslationBtn" disabled>新增翻譯貼紙</button>
+        <button class="primary" id="aiRetainPageBtn" disabled>保留本頁所有翻譯</button>
+        <button class="primary" id="aiDeletePageBtn" disabled>刪除本頁所有翻譯</button>
+        <div class="note-menu-wrap">
+          <button class="primary" id="translationColorBtn" disabled aria-expanded="false" aria-controls="translationColorMenu">變更譯文顏色</button>
+          <div class="note-menu" id="translationColorMenu" hidden>
+            <button type="button" data-color="#e03024" style="color:#e03024">紅色</button>
+            <button type="button" data-color="#168a38" style="color:#168a38">綠色</button>
+            <button type="button" data-color="#111111" style="color:#111111">黑色</button>
+          </div>
+        </div>
         <button class="primary" id="markBtn">標記完稿/取消標記</button>
         <div class="page-zoom-tools">
           <button class="zoom-button" id="zoomInBtn" title="放大圖片" aria-label="放大圖片">＋</button>
@@ -273,7 +314,7 @@ window.addEventListener('message', event => {
     </div>
   </div>
 </main>
-<div class="modal" id="previewModal" role="dialog" aria-modal="true" aria-label="預覽完工圖">
+<div class="modal" id="previewModal" role="dialog" aria-modal="true" aria-label="預覽本檔完工圖">
   <div class="modal-bar">
     <span class="modal-title" id="modalTitle"></span>
     <div class="modal-tools">
@@ -290,7 +331,9 @@ window.addEventListener('message', event => {
 
 <script type="module">
 import { exportIndependentPDF } from './independent-pdf-engine.js';
-import { planCrossFileMasks, migrateNotePadding } from './independent-editor-operations.js';
+import { planCrossFileMasks, planStickyNoteCopies, migrateNotePadding } from './independent-editor-operations.js';
+import { sourceCandidates, mapSourceRect, nativeItemRect, mergeDrafts, exportableNotes, noteNeedsReview, parseGlossary, translateInBatches } from './independent-ai-overlay.js';
+import {TRANSLATION_RED, colorAt, colorSegments, recolorRange, adjustColorRuns} from './translation-colors.js';
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.js';
 
 const state = { files: [], currentIndex: -1 };
@@ -317,6 +360,8 @@ const stickyGraphemeSegmenter = typeof Intl.Segmenter === 'function'
 const stickyLayer = document.getElementById('stickyLayer');
 const applyBtn = document.getElementById('applyBtn');
 const addNoteBtn = document.getElementById('addNoteBtn');
+const batchStickyFileBtn = document.getElementById('batchStickyFileBtn');
+const batchStickyOtherBtn = document.getElementById('batchStickyOtherBtn');
 const fontGrowBtn = document.getElementById('fontGrowBtn');
 const fontShrinkBtn = document.getElementById('fontShrinkBtn');
 const batchOtherBtn = document.getElementById('batchOtherBtn');
@@ -331,6 +376,25 @@ const saveProgressBtn = document.getElementById('saveProgressBtn');
 const clearProgressBtn = document.getElementById('clearProgressBtn');
 const progressMessage = document.getElementById('progressMessage');
 const STORAGE_KEY = 'drawing-desk-independent-editor-v11-progress';
+const GLOSSARY_KEY = 'drawing-desk-independent-ai-glossary-v1';
+const aiTranslateBtn = document.getElementById('aiTranslateBtn');
+const addTranslationBtn = document.getElementById('addTranslationBtn');
+const aiRetainPageBtn = document.getElementById('aiRetainPageBtn');
+const aiDeletePageBtn = document.getElementById('aiDeletePageBtn');
+const translationColorBtn = document.getElementById('translationColorBtn');
+const translationColorMenu = document.getElementById('translationColorMenu');
+let translationSelection = null;
+const stopAiBtn = document.getElementById('stopAiBtn');
+const aiFailures=document.getElementById('aiFailures');
+const aiFailuresList=document.getElementById('aiFailuresList');
+const aiTranslations=document.getElementById('aiTranslations');
+const aiTranslationsList=document.getElementById('aiTranslationsList');
+let stopAiRequested=false;
+stopAiBtn.onclick=()=>{stopAiRequested=true;stopAiBtn.disabled=true;stopAiBtn.textContent='正在完成目前批次…';};
+// Keep saved glossary data compatible without exposing a glossary editor.
+let savedGlossaryText = '';
+try { savedGlossaryText = localStorage.getItem(GLOSSARY_KEY) || ''; }
+catch (error) { progressMessage.textContent = '無法讀取本機翻譯詞彙表：' + error.message; }
 let restoring = false, saving = false, maskInteraction = null;
 let busy = false;
 function setBusy(value) {
@@ -341,6 +405,7 @@ function setBusy(value) {
   document.querySelector('.header-actions').inert = value;
   fileInput.disabled = value;
   updateButtons();
+  renderTranslationList();
 }
 const pageEditKeys = ['status', 'rotation', 'bakedRects', 'pendingRects', 'stickyNotes'];
 const pageRuntimeKeys = ['originalImageData', 'origW', 'origH'];
@@ -391,7 +456,7 @@ async function travelHistory(forward) {
       const previous = target[key].pop();
       opposite.push({ ...snapshot(target), crossBatchGroup: group });
       previous.pages.forEach((page, n) => Object.assign(target.pages[n],page));
-      target.marked = previous.marked;
+      target.marked = false;
       target.restoredOriginal = !!previous.restoredOriginal;
       target.pageIndex = previous.pageIndex;
     });
@@ -401,7 +466,7 @@ async function travelHistory(forward) {
   (forward ? file.history : file.future).push(snapshot(file));
   const previous = from.pop();
   previous.pages.forEach((page, index) => Object.assign(file.pages[index], page));
-  file.marked = previous.marked;
+  file.marked = false;
   file.restoredOriginal = !!previous.restoredOriginal;
   await selectFile(state.currentIndex, previous.pageIndex);
 }
@@ -480,6 +545,7 @@ function renderFileList() {
       fileList.appendChild(pages);
     }
   });
+  renderTranslationList();
   const doneCount = state.files.filter(isExportable).length;
   fileCount.textContent = state.files.length ? `共 ${state.files.length} 個檔案，已完成 ${doneCount} 個` : '尚未上傳檔案';
   emptyState.style.display = state.files.length ? 'none' : 'block';
@@ -489,7 +555,7 @@ function renderFileList() {
 }
 
 function isExportable(file) {
-  return !!file && (file.marked || file.restoredOriginal || file.pages.some(page => page.bakedRects.length || page.stickyNotes.length));
+  return !!file && (file.marked || file.restoredOriginal || file.pages.some(page => page.bakedRects.length || exportableNotes(page.stickyNotes).length));
 }
 
 function getPdf(file) {
@@ -500,6 +566,100 @@ function getPdf(file) {
   }
   return file.pdfPromise;
 }
+async function aiPost(path, body) {
+  const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw Error(data?.error || `${path} HTTP ${response.status}`);
+  if (!data || typeof data !== 'object') throw Error(`${path} 回傳格式錯誤`);
+  return data;
+}
+async function aiPageCandidates(pdf, index) {
+  const page = await pdf.getPage(index + 1);
+  try {
+    const base = page.getViewport({scale:1});
+    const viewport = page.getViewport({scale:1800/base.width});
+    if (viewport.width*viewport.height>12000000) throw Error(`第 ${index+1} 頁 OCR 影像超過 1,200 萬像素上限，未降低解析度。`);
+    const image = document.createElement('canvas');
+    image.width = Math.ceil(viewport.width); image.height = Math.ceil(viewport.height);
+    const context = image.getContext('2d');
+    if (!context) throw Error('無法建立 OCR 畫布');
+    await page.render({canvasContext:context,viewport}).promise;
+    const png = image.toDataURL('image/png').split(',')[1];
+    image.width = image.height = 0;
+    const ocr = await aiPost('/api/ai/ocr',{image:png});
+    if (!Array.isArray(ocr.blocks)) throw Error('OCR 回傳缺少 blocks');
+    const native = [];
+    const content = await page.getTextContent();
+    for (const item of content.items) {
+      if (!item.str?.trim()) continue;
+      const t = pdfjsLib.Util.transform(viewport.transform,item.transform);
+      native.push({text:item.str,...nativeItemRect(t,item.width*viewport.scale),confidence:1});
+    }
+    const blocks = sourceCandidates([...native,...ocr.blocks],index);
+    return {blocks,protectedBlocks:[...native,...ocr.blocks],width:imageWidth(viewport),height:imageHeight(viewport),warnings:ocr.warnings||[]};
+  } finally {page.cleanup();}
+}
+function imageWidth(viewport) {return Math.ceil(viewport.width);}
+function imageHeight(viewport) {return Math.ceil(viewport.height);}
+aiTranslateBtn.onclick = async () => {
+  const file = state.files[state.currentIndex];
+  if (!file || busy) return;
+  setBusy(true);
+  aiFailures.hidden=true;aiFailures.open=false;aiFailuresList.replaceChildren();
+  try {
+    const glossary = parseGlossary(savedGlossaryText);
+    const pdf = await getPdf(file);
+    const pages = [], items = [];
+    for (let index=0;index<file.pages.length;index++) {
+      progressMessage.textContent = `AI OCR：${file.name} 第 ${index+1} / ${file.pages.length} 頁…`;
+      const found = await aiPageCandidates(pdf,index);
+      pages.push(found);
+      for (const block of found.blocks) {
+        if (!file.pages[index].stickyNotes.some(note=>note.aiSource===block.id)) items.push({id:block.id,text:block.text});
+      }
+    }
+    if (!items.length) {
+      progressMessage.textContent = '沒有新的可翻譯非中文文字；尺寸、公差、料號及單位已排除。';
+      return;
+    }
+    progressMessage.textContent = `AI 翻譯：${items.length} 筆文字…`;
+    stopAiRequested=false;stopAiBtn.disabled=false;
+    stopAiBtn.textContent='完成目前翻譯批次並檢查草稿';stopAiBtn.hidden=false;
+    const sourceById=new Map(pages.flatMap((found,index)=>found.blocks.map(block=>[block.id,{block,found,index}])));
+    const warnings=pages.flatMap((found,index)=>found.warnings.map(w=>`第 ${index+1} 頁：${w}`));
+    const failures=[];
+    let count=0,review=0,completed=0;
+    const status=()=>`AI 翻譯：${completed} / ${items.length} 筆；已新增 ${count} 張黑底白字草稿；${failures.length} 筆失敗待人工處理。`;
+    try {
+      await translateInBatches(items,glossary,aiPost,(done)=>{completed=done;progressMessage.textContent=status();},batch=>{
+        const before=snapshot(file);
+        let added=0;
+        for(const item of batch) {
+          const origin=sourceById.get(item.id);
+          if(!origin)throw Error('翻譯回傳了未知來源項目');
+          if(item.error) {
+            const description=`第 ${origin.index+1} 頁「${item.text.slice(0,80)}」：${item.error}`;
+            failures.push(description);
+            const row=document.createElement('li');row.textContent=description;
+            aiFailuresList.append(row);aiFailures.hidden=false;
+            aiFailures.querySelector('summary').textContent=`模型拒絕 ${failures.length} 筆（待人工處理，按此展開）`;
+            continue;
+          }
+          const notes=mergeDrafts(file.pages[origin.index],[{...origin.block,...item}],origin.found.width,origin.found.height,origin.found.protectedBlocks);
+          added+=notes.length;
+          review+=notes.filter(note=>note.aiNeedsReview).length;
+        }
+        if(added){remember(file,before);file.marked=false;count+=added;refreshEditor();}
+        progressMessage.textContent=status();
+        return !stopAiRequested;
+      });
+      progressMessage.textContent=`${file.name}：${stopAiRequested?'已依要求在目前批次後停止；':'翻譯批次處理完成；'}已處理 ${completed} / ${items.length} 筆，新增 ${count} 筆 AI 翻譯草稿（${review} 筆需調整位置／大小），${failures.length} 筆模型失敗待人工處理。草稿僅於編輯畫布顯示，確認後才會進入 PDF。${failures.length?' 失敗範例：'+failures.slice(0,4).join('；')+(failures.length>4?'；仍有其他失敗項目，未翻譯完成。':''):''}${warnings.length?' OCR 提醒：'+warnings.join('；'):''}`;
+    } catch(error) {
+      progressMessage.textContent=`AI 翻譯中斷：${error.message}；已保留 ${count} 筆草稿，已隔離 ${failures.length} 筆模型失敗。請勿將未處理項目視為完成。`;
+    }
+  } catch (error) { progressMessage.textContent = 'AI OCR／準備失敗，未新增草稿：' + error.message; }
+  finally { stopAiBtn.hidden=true;stopAiRequested=false;setBusy(false); }
+};
 async function initializePages(file) {
   const pdf = await getPdf(file);
   for (let index = 0; index < pdf.numPages; index++) {
@@ -656,8 +816,9 @@ function stickyVisualLayout(note, textarea) {
     letterSpacing: style.letterSpacing, lineHeight: style.lineHeight,
     whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: style.wordBreak
   });
-  const lines = [], widths = [];
+  const lines = [], widths = [], offsets = [];
   const source = String(note.text || '').replace(/\r/g, '');
+  let paragraphOffset=0;
   // Keep each paragraph as ONE text node. Separate spans create a break
   // opportunity at every character, unlike the textarea's word wrapping.
   document.body.appendChild(mirror);
@@ -670,6 +831,7 @@ function stickyVisualLayout(note, textarea) {
       let line = '', previousTop = null, offset = 0, lineStart = 0;
       const addLine = end => {
         lines.push(line);
+        offsets.push(paragraphOffset+lineStart);
         if (end > lineStart) {
           range.setStart(node, lineStart);
           range.setEnd(node, end);
@@ -692,8 +854,9 @@ function stickyVisualLayout(note, textarea) {
         previousTop = top;
       }
       addLine(offset);
-    }
-    return {lines, widths};
+      paragraphOffset+=paragraph.length+1;
+      }
+      return {lines, widths, offsets};
   } finally { mirror.remove(); }
 }
 
@@ -712,19 +875,37 @@ function keepStickyNoteInBounds(note) {
 
 function drawStickyNote(context, note) {
   context.save();
-  context.fillStyle = note.color || '#ffeb3b';
-  context.fillRect(note.x, note.y, note.w, note.h);
-  context.strokeStyle = '#111';
-  context.lineWidth = 1;
-  const inset = context.lineWidth / 2;
-  context.strokeRect(note.x + inset, note.y + inset, Math.max(0, note.w - context.lineWidth), Math.max(0, note.h - context.lineWidth));
-  context.fillStyle = '#111';
+  if(!note.aiStatus){
+    context.fillStyle = note.color || '#ffeb3b';
+    context.fillRect(note.x, note.y, note.w, note.h);
+    context.strokeStyle = '#111';
+    context.lineWidth = 1;
+    const inset = context.lineWidth / 2;
+    context.strokeRect(note.x + inset, note.y + inset, Math.max(0, note.w - context.lineWidth), Math.max(0, note.h - context.lineWidth));
+  }
+  context.beginPath();context.rect(note.x,note.y,note.w,note.h);context.clip();
+  context.fillStyle = note.textColor || '#111';
   context.font = `${note.fontSize}px 'Noto Sans TC', sans-serif`;
   context.textBaseline = 'top';
   const lineHeight = note.fontSize * 1.35;
   const lines = wrapStickyText(context, note.text, Math.max(1, note.w - note.padding * 2));
+  let lineOffset=0;
   lines.forEach((line, index) => {
-    context.fillText(line, note.x + note.padding, note.y + note.padding + index * lineHeight);
+    const found=note.text.indexOf(line,lineOffset);
+    const start=Math.max(lineOffset,found);
+    if(note.aiStatus){
+      let x=note.x+note.padding;
+      for(let i=0;i<line.length;){
+        const current=start+i;
+        const c=colorAt(note,current);
+        let end=i+1;
+        while(end<line.length&&colorAt(note,start+end)===c)end++;
+        const piece=line.slice(i,end);
+        context.fillStyle=c;context.fillText(piece,x,note.y+note.padding+index*lineHeight);
+        x+=context.measureText(piece).width;i=end;
+      }
+    }else context.fillText(line, note.x + note.padding, note.y + note.padding + index * lineHeight);
+    lineOffset=start+line.length;
   });
   context.restore();
 }
@@ -732,7 +913,7 @@ function drawStickyNote(context, note) {
 function buildFinalCanvas(file) {
   const finalCanvas = buildBaselineCanvas(file);
   const finalCtx = finalCanvas.getContext('2d');
-  file.stickyNotes.forEach(note => drawStickyNote(finalCtx, note));
+  file.stickyNotes.filter(note=>!note.aiStatus||note.aiStatus==='confirmed').forEach(note => drawStickyNote(finalCtx, note));
   return finalCanvas;
 }
 
@@ -762,6 +943,7 @@ function positionStickyElement(element, note) {
   element.style.height = note.h + 'px';
   element.style.borderWidth = '1px';
   const text = element.querySelector('.sticky-text');
+  const colored = element.querySelector('.ai-colored-text');
   if (!text) return;
   text.style.left = note.padding + 'px';
   text.style.top = note.padding + 'px';
@@ -771,6 +953,11 @@ function positionStickyElement(element, note) {
   text.style.height = Math.max(0, availableHeight) + 'px';
   text.style.visibility = availableWidth > 0 && availableHeight > 0 ? 'visible' : 'hidden';
   text.style.fontSize = note.fontSize + 'px';
+  if(colored){
+    colored.style.left=text.style.left;colored.style.top=text.style.top;
+    colored.style.width=text.style.width;colored.style.height=text.style.height;
+    colored.style.fontSize=text.style.fontSize;
+  }
 }
 
 function beginStickyInteraction(event, note, element, type, corner = '') {
@@ -816,12 +1003,20 @@ function moveStickyInteraction(event) {
     keepStickyNoteInBounds(note);
   }
   positionStickyElement(action.element, note);
+  if (note.aiStatus) {
+    const size=editorLogicalSize(action.file);
+    note.aiNeedsReview=noteNeedsReview(note,size.width,size.height,action.file.stickyNotes);
+    action.element.classList.toggle('ai-review',note.aiNeedsReview);
+  }
 }
 
 function endStickyInteraction(event) {
   if (!stickyInteraction || (event.pointerId !== undefined && event.pointerId !== stickyInteraction.pointerId)) return;
   const { file, before } = stickyInteraction;
-  if (JSON.stringify(before) !== JSON.stringify(snapshot(file))) remember(file, before);
+  if (JSON.stringify(before) !== JSON.stringify(snapshot(file))) {
+    remember(file, before);
+    if (stickyInteraction.note.aiStatus) {file.marked=false;renderFileList();}
+  }
   stickyInteraction = null;
   document.body.classList.remove('grabbing');
 }
@@ -835,6 +1030,9 @@ function selectStickyNote(note) {
   stickyLayer.querySelectorAll('.sticky-note').forEach(element => {
     element.classList.toggle('selected', element.dataset.noteId === selectedNoteId);
   });
+  aiTranslationsList.querySelectorAll('.ai-translation-row').forEach(row => {
+    row.classList.toggle('selected',row.dataset.noteId === selectedNoteId && Number(row.dataset.pageIndex) === state.files[state.currentIndex]?.pageIndex);
+  });
   updateButtons();
 }
 function adjustSelectedNoteFont(delta) {
@@ -845,6 +1043,11 @@ function adjustSelectedNoteFont(delta) {
   if (next === note.fontSize) return;
   remember(file);
   note.fontSize = next;
+  if(note.aiStatus) {
+    const size=editorLogicalSize(file);
+    note.aiNeedsReview=noteNeedsReview(note,size.width,size.height,file.stickyNotes);
+    file.marked=false;
+  }
   fitStickyNoteToText(note);
   keepStickyNoteInBounds(note);
   renderStickyNotes();
@@ -853,20 +1056,105 @@ function adjustSelectedNoteFont(delta) {
 fontGrowBtn.onclick = () => adjustSelectedNoteFont(1);
 fontShrinkBtn.onclick = () => adjustSelectedNoteFont(-1);
 
+function changePageTranslations(remove) {
+  const file = state.files[state.currentIndex];
+  if (!file || busy || restoring || !file.originalImageData) return;
+  const targets = file.stickyNotes.filter(note => note.aiStatus && (remove || note.aiStatus !== 'confirmed'));
+  if (!targets.length) return;
+  remember(file);
+  if (remove) {
+    file.stickyNotes = file.stickyNotes.filter(note => !note.aiStatus);
+    if (targets.some(note => note.id === selectedNoteId)) selectedNoteId = null;
+  } else targets.forEach(note => { note.aiStatus = 'confirmed'; });
+  file.marked = false;
+  if (remove) renderStickyNotes();
+  renderFileList();updateButtons();
+}
+aiRetainPageBtn.onclick = () => changePageTranslations(false);
+aiDeletePageBtn.onclick = () => changePageTranslations(true);
+
+function renderTranslationList() {
+  const file = state.files[state.currentIndex];
+  const notes = file?.pages.flatMap((page,pageIndex) => page.stickyNotes
+    .filter(note => note.aiStatus).map(note => ({note,pageIndex}))) || [];
+  aiTranslations.hidden = !notes.length;
+  aiTranslations.querySelector('summary').textContent = `本檔 AI 翻譯 ${notes.length} 筆（按此展開／收合）`;
+  aiTranslationsList.replaceChildren();
+  notes.forEach(({note,pageIndex}) => {
+    const row=document.createElement('div');
+    row.className='ai-translation-row';
+    row.dataset.noteId=note.id;
+    row.dataset.pageIndex=pageIndex;
+    row.tabIndex=0;
+    row.setAttribute('role','button');
+    row.setAttribute('aria-label',`第 ${pageIndex+1} 頁，原文 ${note.sourceText || note.aiSourceText || ''}，譯文 ${note.text || ''}，選取翻譯便利貼`);
+    row.classList.toggle('selected',pageIndex===file.pageIndex && selectedNoteId===note.id);
+    const label=(className,value) => {
+      const span=document.createElement('span');span.className=className;
+      span.textContent=value;span.title=value;
+      return span;
+    };
+    const actions=document.createElement('span');actions.className='ai-translation-actions';
+    const remove=document.createElement('button');remove.type='button';remove.className='ai-delete';remove.textContent='刪除';
+    remove.setAttribute('aria-label',`刪除第 ${pageIndex+1} 頁翻譯`);
+    remove.disabled=busy || restoring;
+    remove.onclick=event=>{event.stopPropagation();changeTranslationNote(pageIndex,note.id,true);};
+    actions.append(remove);
+    row.append(label('ai-page',`第 ${pageIndex+1} 頁`),label('ai-source',note.sourceText || note.aiSourceText || ''),label('ai-translation',note.text || ''),actions);
+    row.onclick=async()=>{
+      if (busy || restoring) return;
+      if (file.pageIndex!==pageIndex) await selectFile(state.currentIndex,pageIndex);
+      const current=file.pages[pageIndex].stickyNotes.find(item=>item.id===note.id);
+      if (!current || file.pageIndex!==pageIndex) return;
+      selectStickyNote(current);
+      stickyLayer.querySelectorAll('.sticky-note').forEach(element=>{
+        if (element.dataset.noteId===note.id) element.scrollIntoView?.({block:'nearest',inline:'nearest'});
+      });
+    };
+    row.onkeydown=event=>{
+      if (event.target!==row || !['Enter',' '].includes(event.key)) return;
+      event.preventDefault();row.click();
+    };
+    aiTranslationsList.append(row);
+  });
+}
+
+function changeTranslationNote(pageIndex,noteId,remove) {
+  const file=state.files[state.currentIndex];
+  if (!file || busy || restoring || !file.pages[pageIndex]) return;
+  const page=file.pages[pageIndex];
+  const note=page.stickyNotes.find(item=>item.id===noteId && item.aiStatus);
+  if (!note || (!remove && note.aiStatus==='confirmed')) return;
+  remember(file);
+  if (remove) {
+    page.stickyNotes=page.stickyNotes.filter(item=>item!==note);
+    if (pageIndex===file.pageIndex && selectedNoteId===noteId) selectedNoteId=null;
+  } else note.aiStatus='confirmed';
+  file.marked=false;
+  if (pageIndex===file.pageIndex && remove) renderStickyNotes();
+  renderFileList();updateButtons();
+}
+
 function renderStickyNotes() {
   stickyLayer.innerHTML = '';
   const file = state.files[state.currentIndex];
-  if (!file) return;
+  if (!file) { translationSelection=null;renderTranslationList(); return; }
+  if(translationSelection && (translationSelection.pageIndex!==file.pageIndex || !file.stickyNotes.some(note=>note.id===translationSelection.noteId)))translationSelection=null;
   if (!file.stickyNotes.some(note => note.id === selectedNoteId)) selectedNoteId = null;
   const {width,height} = editorLogicalSize(file);
   scaleStickyLayer(width, height);
 
   file.stickyNotes.forEach(note => {
+    if(note.aiStatus && note.color==='#000000' && note.textColor==='#ffffff'){
+      note.color='transparent';note.textColor=TRANSLATION_RED;
+    }
     fitStickyNoteToText(note);
     keepStickyNoteInBounds(note);
     const element = document.createElement('div');
-    element.className = 'sticky-note';
+    element.className = 'sticky-note' + (note.aiStatus ? ' ai-note' : '');
+    element.classList.toggle('ai-review',!!note.aiNeedsReview);
     element.dataset.noteId = note.id;
+    if (note.aiStatus) element.title = [`原文：${note.sourceText || note.aiSourceText || ''}`, note.aiWarning || '譯文須人工校對'].join('\n');
     element.classList.toggle('selected', note.id === selectedNoteId);
     element.addEventListener('pointerdown', event => {
       selectStickyNote(note);
@@ -877,14 +1165,49 @@ function renderStickyNotes() {
     text.className = 'sticky-text';
     text.value = note.text;
     text.placeholder = '輸入文字';
-    text.setAttribute('aria-label', '便利貼文字');
+    text.setAttribute('aria-label', note.aiStatus ? 'AI 翻譯草稿文字' : '便利貼文字');
+    text.style.color = note.aiStatus ? 'transparent' : note.textColor || '#111';
+    const colored=note.aiStatus?document.createElement('div'):null;
+    const paintColors=()=>{
+      if(!colored)return;
+      colored.replaceChildren(...colorSegments(note).map(part=>{
+        const span=document.createElement('span');span.textContent=part.text;span.style.color=part.color;return span;
+      }));
+    };
+    if(colored){colored.className='ai-colored-text';colored.setAttribute('aria-hidden','true');paintColors();}
+    const trackSelection=()=>{
+      if(!note.aiStatus)return;
+      translationSelection=text.selectionStart<text.selectionEnd ? {
+        noteId:note.id,pageIndex:file.pageIndex,start:text.selectionStart,end:text.selectionEnd
+      }:null;
+      updateButtons();
+    };
+    text.addEventListener('select',trackSelection);
+    text.addEventListener('keyup',trackSelection);
+    text.addEventListener('pointerup',trackSelection);
+    text.addEventListener('blur',()=>{if(!translationColorBtn.contains(document.activeElement)&&!translationColorMenu.contains(document.activeElement)){translationSelection=null;updateButtons();}});
+    text.addEventListener('beforeinput',event=>{text.dataset.editStart=String(text.selectionStart);text.dataset.editEnd=String(text.selectionEnd);});
     text.addEventListener('input', () => {
-      if (note.text === text.value) return;
+      const current=file.stickyNotes.find(item=>item.id===note.id);
+      if (!current || current.text === text.value) return;
       remember(file);
-      note.text = text.value;
-      fitStickyNoteToText(note);
-      keepStickyNoteInBounds(note);
-      positionStickyElement(element, note);
+      if(current.aiStatus){
+        const old=current.text, next=text.value;
+        let start=0;while(start<old.length&&start<next.length&&old[start]===next[start])start++;
+        let suffix=0;while(suffix<old.length-start&&suffix<next.length-start&&old[old.length-1-suffix]===next[next.length-1-suffix])suffix++;
+        adjustColorRuns(current,start,old.length-start-suffix,next.length-start-suffix);
+      }
+      current.text = text.value;
+      paintColors();
+      translationSelection=null;
+      if(current.aiStatus) {
+        current.aiNeedsReview=noteNeedsReview(current,width,height,file.stickyNotes);
+        element.classList.toggle('ai-review',current.aiNeedsReview);
+        file.marked=false;renderFileList();updateButtons();
+      }
+      fitStickyNoteToText(current);
+      keepStickyNoteInBounds(current);
+      positionStickyElement(element, current);
     });
     text.addEventListener('pointerdown', event => { event.stopPropagation(); selectStickyNote(note); });
     text.addEventListener('focus', () => selectStickyNote(note));
@@ -910,7 +1233,19 @@ function renderStickyNotes() {
       updateButtons();
     });
 
-    element.append(text, dragHandle, deleteButton);
+    if(colored)element.append(colored);
+    element.append(text, dragHandle);
+    if(note.aiStatus){
+      const removeTranslation=document.createElement('button');
+      removeTranslation.type='button';removeTranslation.className='ai-note-delete';
+      removeTranslation.textContent='×';removeTranslation.title='刪除翻譯貼紙';removeTranslation.setAttribute('aria-label','刪除翻譯貼紙');
+      removeTranslation.addEventListener('pointerdown',event=>event.stopPropagation());
+      removeTranslation.addEventListener('click',event=>{
+        event.stopPropagation();changeTranslationNote(file.pageIndex,note.id,true);
+      });
+      element.append(removeTranslation);
+    }
+    if(!note.aiStatus) element.append(deleteButton);
     ['nw', 'ne', 'sw', 'se'].forEach(corner => {
       const handle = document.createElement('div');
       handle.className = `sticky-resize ${corner}`;
@@ -921,6 +1256,7 @@ function renderStickyNotes() {
     stickyLayer.appendChild(element);
     positionStickyElement(element, note);
   });
+  renderTranslationList();
 }
 
 // The rectangle body moves the selection; its four corners resize it.
@@ -1040,8 +1376,17 @@ function updateButtons() {
   applyBtn.disabled = !ready || file.pendingRects.length === 0;
   addNoteBtn.disabled = !ready;
   previewBtn.disabled = !ready;
+  aiTranslateBtn.disabled = !ready;
+  addTranslationBtn.disabled = !ready;
+  aiRetainPageBtn.disabled = !ready || !file.stickyNotes.some(note => note.aiStatus && note.aiStatus !== 'confirmed');
+  aiDeletePageBtn.disabled = !ready || !file.stickyNotes.some(note => note.aiStatus);
+  const selectedTranslation=ready && translationSelection && translationSelection.pageIndex===file.pageIndex && file.stickyNotes.find(note=>note.id===translationSelection.noteId&&note.aiStatus);
+  translationColorBtn.disabled=!selectedTranslation || translationSelection.start>=translationSelection.end;
+  if(translationColorBtn.disabled){translationColorMenu.hidden=true;translationColorBtn.setAttribute('aria-expanded','false');}
   batchOtherBtn.disabled = !ready || state.files.length < 2 || file.pendingRects.length === 0;
   const selected = ready && file.stickyNotes.find(note => note.id === selectedNoteId);
+  batchStickyFileBtn.disabled = !selected || !!selected.aiStatus || file.pages.length < 2;
+  batchStickyOtherBtn.disabled = !selected || !!selected.aiStatus || state.files.length < 2;
   fontGrowBtn.disabled = !selected || selected.fontSize * zoom >= 72;
   fontShrinkBtn.disabled = !selected || selected.fontSize * zoom <= 1;
 }
@@ -1133,10 +1478,33 @@ document.addEventListener('keydown', event => {
 noteMenu.querySelectorAll('button').forEach(button => {
   button.onclick = () => { closeNoteMenu(); addStickyNote(button.dataset.color); };
 });
-function addStickyNote(color) {
+translationColorBtn.addEventListener('pointerdown',event=>event.preventDefault());
+translationColorMenu.addEventListener('pointerdown',event=>event.preventDefault());
+translationColorBtn.onclick=()=>{
+  if(translationColorBtn.disabled)return;
+  translationColorMenu.hidden=!translationColorMenu.hidden;
+  translationColorBtn.setAttribute('aria-expanded',String(!translationColorMenu.hidden));
+};
+translationColorMenu.querySelectorAll('button').forEach(button=>{
+  button.onclick=()=>{
+    const file=state.files[state.currentIndex],selection=translationSelection;
+    const note=file?.stickyNotes.find(item=>item.id===selection?.noteId && item.aiStatus);
+    if(!note||selection.pageIndex!==file.pageIndex)return;
+    remember(file);
+    recolorRange(note,selection.start,selection.end,button.dataset.color);
+    file.marked=false;
+    translationColorMenu.hidden=true;
+    translationColorBtn.setAttribute('aria-expanded','false');
+    renderStickyNotes();renderFileList();updateButtons();
+    const replacement=stickyLayer.querySelector(`[data-note-id="${note.id}"] .sticky-text`);
+    replacement?.focus();replacement?.setSelectionRange(selection.start,selection.end);
+  };
+});
+addTranslationBtn.onclick=()=>addStickyNote('transparent',true);
+function addStickyNote(color,translation=false) {
   const file = state.files[state.currentIndex];
-  if (!file || !file.originalImageData) return;
-  const buttonRect = applyBtn.getBoundingClientRect();
+  if (!file || !file.originalImageData || busy || restoring) return;
+  const buttonRect = (translation?addTranslationBtn:applyBtn).getBoundingClientRect();
   const margin = 12 / zoom;
   const {width,height} = editorLogicalSize(file);
   const note = {
@@ -1152,10 +1520,15 @@ function addStickyNote(color) {
     borderWidth: 1,
     text: ''
   };
+  if(translation){
+    note.aiStatus='draft';note.textColor=TRANSLATION_RED;
+    note.sourceText='';note.aiNeedsReview=false;
+  }
   fitStickyNoteToText(note);
   keepStickyNoteInBounds(note);
   remember(file);
   file.stickyNotes.push(note);
+  if(translation){file.marked=false;selectedNoteId=note.id;}
   renderStickyNotes();
   renderFileList();
   updateButtons();
@@ -1164,6 +1537,41 @@ function addStickyNote(color) {
     if (noteElement) noteElement.focus();
   });
 };
+
+function copySelectedStickyNotes(scope) {
+  const sourceIndex=state.currentIndex;
+  const sourceFile=state.files[sourceIndex];
+  const note=sourceFile?.stickyNotes.find(item=>item.id===selectedNoteId && !item.aiStatus);
+  if(!note || !sourceFile.originalImageData || busy || restoring)return;
+  const plan=planStickyNoteCopies(state.files,sourceIndex,sourceFile.pageIndex,note.id,scope);
+  if(!plan.length)return;
+  const remembered=new Set();
+  const saveBefore=index=>{
+    if(remembered.has(index))return;
+    remember(state.files[index]);remembered.add(index);
+  };
+  // The source joins cross-file history so undo/redo from this workspace
+  // reverses the entire batch, including every other document's first page.
+  saveBefore(sourceIndex);
+  for(const {fileIndex,pageIndex,rect,scale} of plan){
+    saveBefore(fileIndex);
+    const target=state.files[fileIndex];
+    const copy=JSON.parse(JSON.stringify(note));
+    Object.assign(copy,rect,{id:`note-${++noteSequence}`,manualH:rect.h,
+      fontSize:note.fontSize*scale,padding:note.padding*scale});
+    target.pages[pageIndex].stickyNotes.push(copy);
+    target.marked=false;
+  }
+  sourceFile.marked=false;
+  if(scope==='other-first-pages'){
+    const group={id:crypto.randomUUID(),members:[...remembered]};
+    group.members.forEach(index=>{state.files[index].history.at(-1).crossBatchGroup=group;});
+  }
+  refreshEditor();
+  progressMessage.textContent=`已複製便利貼至 ${plan.length} 個${scope==='file'?'檔內頁面':'餘檔首頁'}；尺寸不同的頁面放在左上角。可用「復原」撤銷整批。`;
+}
+batchStickyFileBtn.onclick=()=>copySelectedStickyNotes('file');
+batchStickyOtherBtn.onclick=()=>copySelectedStickyNotes('other-first-pages');
 
 applyBtn.onclick = () => {
   const file = state.files[state.currentIndex];
@@ -1258,10 +1666,13 @@ resetBtn.onclick = () => {
 
 // Preview and export consume exactly the same PDF builder.
 async function buildFinalPdf(file) {
-  const edits = file.pages.map(page => ({ ...page, stickyNotes: page.stickyNotes.map(note => {
+  const edits = file.pages.map(page => ({ ...page, stickyNotes: exportableNotes(page.stickyNotes).map(note => {
     const textarea = stickyLayer.querySelector(`[data-note-id="${note.id}"] .sticky-text`);
-    const {lines, widths} = stickyVisualLayout(note, textarea);
-    return { ...note, visualLines: lines, visualWidths: widths };
+    const {lines, widths, offsets} = stickyVisualLayout(note, textarea);
+    // Retained notes keep their fixed-size appearance and complete annotation text.
+    return { ...note, color:note.aiStatus?'transparent':note.color,
+      textColor:note.aiStatus && note.textColor==='#ffffff'?TRANSLATION_RED:note.textColor,
+      visualLines: lines, visualWidths: widths, visualOffsets: offsets };
   }) }));
   return exportIndependentPDF(file.arrayBuffer.slice(0),edits);
 }
@@ -1312,7 +1723,7 @@ previewBtn.onclick = async () => {
     const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
     if (token !== previewToken) { await pdf.destroy(); return; }
     previewPdf = pdf;
-    modalTitle.textContent = `預覽完工圖 — ${file.name}（共 ${pdf.numPages} 頁）`;
+    modalTitle.textContent = `預覽本檔完工圖 — ${file.name}（共 ${pdf.numPages} 頁）`;
     let renderQueue = Promise.resolve();
     function queueSheet(sheet) {
       if (sheet.dataset.visible !== 'true' || sheet.dataset.queued === 'true') return;
@@ -1554,6 +1965,7 @@ async function restoreProgress() {
     fileInput.disabled = false;
     clearProgressBtn.disabled = false;
     updateButtons();
+    renderTranslationList();
   }
 }
 restoreProgress();

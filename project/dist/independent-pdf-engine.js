@@ -1,5 +1,6 @@
 // Independent drawing editor export: true redaction with retained PDF page objects.
 import * as mupdf from './vendor/mupdf/mupdf.js';
+import {colorAt} from './translation-colors.js';
 const RGB=mupdf.ColorSpace.DeviceRGB;
 let latin,cjk;
 function glyphFont(code){
@@ -17,13 +18,20 @@ function addNote(page,note,edit){
  const box=boundsRect(note,page,edit),list=new mupdf.DisplayList(box),device=new mupdf.DisplayListDevice(list);
  let annotation,path;
  try{
-  path=new mupdf.Path();path.rect(...box);device.fillPath(path,false,mupdf.Matrix.identity,RGB,color(note.color),1);
+  path=new mupdf.Path();path.rect(...box);
+  if(!note.aiStatus)device.fillPath(path,false,mupdf.Matrix.identity,RGB,color(note.color),1);
   device.clipPath(path,false,mupdf.Matrix.identity);
   const pageWidth=page.getBounds()[2]-page.getBounds()[0];
   const scale=pageWidth/edit.origW;
   const width=box[2]-box[0],height=box[3]-box[1],pad=Math.max(0,(note.padding??6)*scale);
   const fontSize=Math.max(0.1,(note.fontSize??13)*scale),lineHeight=fontSize*1.35;
+  const ink=color(note.textColor||'#111111');
   let x=box[0]+pad,y=box[1]+pad+fontSize;
+  let sourceOffset=0;
+  const drawGlyph=(glyph,transform,offset)=>{
+   const text=new mupdf.Text();
+   try{text.showGlyph(glyph.font,transform,glyph.gid,glyph.code);device.fillText(text,mupdf.Matrix.identity,RGB,note.aiStatus?color(colorAt(note,offset)):ink,1);}finally{text.destroy();}
+  };
   if(Array.isArray(note.visualLines)){
    for(const [lineIndex,line] of note.visualLines.entries()){
     const glyphs=Array.from(line,character=>{
@@ -32,7 +40,10 @@ function addNote(page,note,edit){
      return {code,font,gid,advance:font.advanceGlyph(gid)*fontSize};
     });
     x=box[0]+pad;
-    if(y>box[3]-pad+0.1)break;
+    const lineOffset=note.visualOffsets?.[lineIndex] ?? (note.text||'').indexOf(line,sourceOffset);
+    // A short sticker can still show the top of this line: clip glyphs to its
+    // rectangle instead of discarding the whole line because its baseline is low.
+    if(y-fontSize>=box[3]-pad+0.1)break;
     // Match each PDF line's advance to the browser's measured line width.
     // Fitting only overlong lines made Helvetica text much narrower than the
     // editor and left a conspicuous empty strip at the note's right edge.
@@ -42,33 +53,37 @@ function addNote(page,note,edit){
      ? Math.min(Math.max(0,width-2*pad),measured*scale)
      : Math.min(advance,Math.max(0,width-2*pad));
     const horizontalScale=advance>0?target/advance:1;
+    let charOffset=Math.max(0,lineOffset);
     for(const glyph of glyphs){
-     const text=new mupdf.Text();
-     try{text.showGlyph(glyph.font,[fontSize*horizontalScale,0,0,-fontSize,x,y],glyph.gid,glyph.code);device.fillText(text,mupdf.Matrix.identity,RGB,[0.07,0.07,0.07],1);}finally{text.destroy();}
+     drawGlyph(glyph,[fontSize*horizontalScale,0,0,-fontSize,x,y],charOffset);
+     charOffset+=String.fromCodePoint(glyph.code).length;
      x+=glyph.advance*horizontalScale;
     }
+    sourceOffset=charOffset;
     y+=lineHeight;
    }
   }else for(const char of note.text||''){
-   if(char==='\n'){x=box[0]+pad;y+=lineHeight;continue;}
+   if(char==='\n'){x=box[0]+pad;y+=lineHeight;sourceOffset++;continue;}
    const code=char.codePointAt(0),font=glyphFont(code),gid=font.encodeCharacter(code);
    if(!gid)throw Error('便利貼含無法輸出的字元，請移除特殊符號後重試。');
    const advance=font.advanceGlyph(gid)*fontSize;
    if(x+advance>box[2]-pad&&x>box[0]+pad){x=box[0]+pad;y+=lineHeight;}
-   if(y>box[3]-pad+0.1)break;
-   const text=new mupdf.Text();
-   try{text.showGlyph(font,[fontSize,0,0,-fontSize,x,y],gid,code);device.fillText(text,mupdf.Matrix.identity,RGB,[0.07,0.07,0.07],1);}finally{text.destroy();}
+   if(y-fontSize>=box[3]-pad+0.1)break;
+   drawGlyph({font,gid,code},[fontSize,0,0,-fontSize,x,y],sourceOffset);
+   sourceOffset+=char.length;
    x+=advance;
   }
   device.popClip();
   device.close();
-  annotation=page.createAnnotation('Stamp');
+  // FreeText exposes the text editor in Acrobat; Stamp only exposes movement.
+  // Keep the hand-laid appearance for exact preview/export rendering until edited.
+  annotation=page.createAnnotation('FreeText');
   annotation.setRect(box);
   annotation.setContents(note.text||'');
-  annotation.setColor(color(note.color));
+  annotation.setDefaultAppearance('Helv',fontSize,ink);
+  if(note.aiStatus){annotation.setBorderWidth(0);}else annotation.setColor(color(note.color));
   annotation.setFlags(mupdf.PDFAnnotation.IS_PRINT);
   annotation.setAppearanceFromDisplayList('N',null,mupdf.Matrix.identity,list);
-  // Preserve the custom colored appearance; regenerating the annotation replaces it.
  }finally{annotation?.destroy();path?.destroy();device.destroy();list.destroy();}
 }
 export function exportIndependentPDF(bytes,edits){

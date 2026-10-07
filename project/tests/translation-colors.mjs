@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {recolorRange,colorAt,adjustColorRuns,colorSegments} from '../dist/translation-colors.js';
+const note={aiStatus:'confirmed',text:'公差原則',textColor:'#e03024'};
+assert.equal(recolorRange(note,1,3,'#168a38'),true);
+assert.deepEqual([...note.text].map((_,i)=>colorAt(note,i)),['#e03024','#168a38','#168a38','#e03024']);
+assert.equal(recolorRange(note,2,4,'#111111'),true);
+assert.deepEqual([...note.text].map((_,i)=>colorAt(note,i)),['#e03024','#168a38','#111111','#111111']);
+assert.deepEqual(colorSegments(note).map(s=>s.text),['公','差','原則']);
+adjustColorRuns(note,1,0,1);note.text='公新差原則';
+assert.deepEqual([...note.text].map((_,i)=>colorAt(note,i)),['#e03024','#e03024','#168a38','#111111','#111111']);
+adjustColorRuns(note,2,2,0);note.text='公新則';
+assert.deepEqual([...note.text].map((_,i)=>colorAt(note,i)),['#e03024','#e03024','#111111']);
+assert.equal(recolorRange(note,0,0,'#168a38'),false);
+console.log('PASS: selected translation ranges, mixed color and text edits');

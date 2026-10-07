@@ -1,0 +1,167 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const {JSDOM}=require('jsdom');
+const html=fs.readFileSync(require('node:path').join(__dirname,'../dist/drawing-editor.html'),'utf8');
+const document=new JSDOM(html).window.document;
+const section=(start,end)=>html.slice(html.indexOf(start),html.indexOf(end,html.indexOf(start)));
+const note={id:'ai',aiStatus:'draft',aiNeedsReview:true,x:20,y:20,w:10,h:4,manualH:4,fontSize:6,padding:2,text:'完整翻譯文字不可丟失'.repeat(20),aiProtected:[{x:20,y:20,w:10,h:4}]};
+const page=()=>({status:'pending',rotation:0,bakedRects:[],pendingRects:[],origW:900,origH:600,originalImageData:{},stickyNotes:[]});
+const file={pages:[{...page(),stickyNotes:[note,{...note,id:'manual',aiStatus:undefined}]},{...page(),stickyNotes:[{...note,id:'other-page'}]}],pageIndex:0,history:[],future:[],marked:true};
+const noop=()=>{};
+const context=vm.createContext({translationColorBtn:document.getElementById('translationColorBtn'),translationColorMenu:document.getElementById('translationColorMenu'),colorSegments:n=>[{text:n.text,color:'#e03024'}],translationSelection:null,adjustColorRuns:()=>{},document,state:{files:[file],currentIndex:0},stickyLayer:document.getElementById('stickyLayer'),aiTranslations:document.getElementById('aiTranslations'),aiTranslationsList:document.getElementById('aiTranslationsList'),selectedNoteId:null,busy:false,restoring:false,progressMessage:{},pageEditKeys:['status','rotation','bakedRects','pendingRects','stickyNotes'],pageRuntimeKeys:['origW','origH','originalImageData'],editorLogicalSize:()=>({width:900,height:600}),scaleStickyLayer:noop,fitStickyNoteToText:noop,keepStickyNoteInBounds:noop,positionStickyElement:noop,renderFileList:()=>context.renderTranslationList(),updateButtons:noop,selectFile:async(_,i)=>{file.pageIndex=i;context.renderStickyNotes();},noteNeedsReview:()=>true,stickyVisualLayout:n=>({lines:n.text.split(''),widths:[]}),exportableNotes:notes=>notes.filter(n=>!n.aiStatus||n.aiStatus==='confirmed'),exportIndependentPDF:(_,edits)=>edits});
+vm.runInContext(section('function attachPageAccessors(', 'function refreshEditor(')+section('async function travelHistory(', 'undoBtn.onclick')+section('function renderTranslationList()', 'function renderStickyNotes()')+section('function renderStickyNotes()', '// The rectangle body'),context);
+context.attachPageAccessors(file);
+context.renderStickyNotes();
+const before=JSON.stringify(note);
+context.aiRetainPageBtn=document.getElementById('aiRetainPageBtn');
+context.aiDeletePageBtn=document.getElementById('aiDeletePageBtn');
+vm.runInContext(section('function changePageTranslations(', 'function renderTranslationList()'),context);
+const retain=context.aiRetainPageBtn;
+retain.disabled=false;
+assert.equal(context.aiTranslationsList.querySelector('.ai-retain'),null,'list has no per-note retain action');
+retain.click();
+assert.equal(note.aiStatus,'confirmed','overflow/collision/review must not block retain');
+const reject=context.aiTranslationsList.querySelector('.ai-delete');
+assert.equal(reject.textContent,'刪除');
+assert.equal(JSON.stringify({...note,aiStatus:'draft'}),before,'retain preserves full text and geometry');
+retain.click();
+assert.equal(note.aiStatus,'confirmed','retain is not an unconfirm toggle');
+assert.equal(file.history.length,1,'already-retained note is a no-op');
+assert.equal(file.marked,false);
+async function verifyExport() {
+ file.arrayBuffer=new ArrayBuffer(1);
+ vm.runInContext(section('async function buildFinalPdf(', '// Continuous, lazily'),context);
+ const edits=await context.buildFinalPdf(file);
+ assert.equal(edits[0].stickyNotes[0].text,note.text);
+ assert.equal(edits[0].stickyNotes[0].h,4);
+ assert.equal(edits[1].stickyNotes.length,0,'other-page drafts remain excluded');
+ const {exportIndependentPDF}=await import('../dist/independent-pdf-engine.js');
+ const mupdf=await import('../dist/vendor/mupdf/mupdf.js');
+ const bytes=exportIndependentPDF(fs.readFileSync(require('node:path').join(__dirname,'fixtures/rotation.pdf')),[edits[0]]);
+ const pdf=mupdf.Document.openDocument(bytes,'application/pdf');
+ try {
+  const page=pdf.loadPage(0);
+  try {
+   const annotations=page.getAnnotations();
+   try {assert.equal(annotations[0].getContents(),note.text);annotations[0].getRect().forEach((v,i)=>assert.ok(Math.abs(v-[4,4,6,4.8][i])<0.00001,'PDF rectangle preserves original size'));}
+   finally {annotations.forEach(a=>a.destroy());}
+  } finally {page.destroy();}
+ } finally {pdf.destroy();}
+ console.log('PASS: retain and real PDF export allow overlap/overflow without losing text or resizing');
+}
+async function verifyBulk() {
+ const retainPage=document.getElementById('aiRetainPageBtn'),deletePage=document.getElementById('aiDeletePageBtn');
+ context.aiRetainPageBtn=retainPage;context.aiDeletePageBtn=deletePage;
+ context.restoring=false;
+ // Execute the actual wiring, not a duplicate implementation.
+ vm.runInContext(section('function changePageTranslations(', 'function renderStickyNotes()'),context);
+ file.stickyNotes.push({...note,id:'second',aiStatus:'draft'});
+ const manual=JSON.stringify(file.stickyNotes.find(n=>n.id==='manual'));
+ const other=JSON.stringify(file.pages[1]);
+ const original=JSON.stringify(file.stickyNotes);
+ file.marked=true;
+ const history=file.history.length;
+ retainPage.disabled=false;deletePage.disabled=false;
+ retainPage.click();
+ assert.ok(file.stickyNotes.filter(n=>n.aiStatus).every(n=>n.aiStatus==='confirmed'),'bulk retains every AI note');
+ assert.equal(file.history.length,history+1,'one history entry for a whole page');
+ assert.equal(file.marked,false);
+ assert.equal(JSON.stringify(file.stickyNotes.find(n=>n.id==='manual')),manual);
+ assert.equal(JSON.stringify(file.pages[1]),other);
+ await context.travelHistory(false);
+ assert.equal(JSON.stringify(file.stickyNotes),original);
+ assert.equal(file.marked,false,'undo does not restore completion');
+ await context.travelHistory(true);
+ assert.ok(file.stickyNotes.filter(n=>n.aiStatus).every(n=>n.aiStatus==='confirmed'));
+ assert.equal(file.marked,false);
+ const retained=JSON.stringify(file.stickyNotes);
+ file.marked=true;
+ deletePage.click();
+ assert.equal(file.stickyNotes.length,1);
+ assert.equal(JSON.stringify(file.stickyNotes[0]),manual);
+ assert.equal(file.marked,false);
+ assert.equal(JSON.stringify(file.pages[1]),other);
+ await context.travelHistory(false);
+ assert.equal(JSON.stringify(file.stickyNotes),retained);
+ assert.equal(file.marked,false);
+ await context.travelHistory(true);
+ assert.equal(file.stickyNotes.length,1);
+ const noAIHistory=file.history.length;
+ retainPage.click();deletePage.click();
+ assert.equal(file.history.length,noAIHistory,'no AI notes means no history entry');
+ console.log('PASS: page-only AI bulk retain/delete, manual preservation, undo/redo and completion invalidation');
+}
+function verifyButtons() {
+ for(const button of document.querySelectorAll('button[id]')) context[button.id]=button;
+ context.saving=false;context.zoom=1;
+ vm.runInContext(section('function updateButtons()', 'async function selectFile('),context);
+ file.stickyNotes=[{...note,aiStatus:'confirmed'}];
+ context.renderStickyNotes();context.updateButtons();
+ assert.equal(context.translationColorBtn.disabled,true,'no selected characters means no color action');
+ const selectedText=context.stickyLayer.querySelector('.ai-note textarea');
+ selectedText.setSelectionRange(0,2);
+ selectedText.dispatchEvent(new document.defaultView.Event('select'));
+ assert.equal(context.translationColorBtn.disabled,false,'selected AI characters enable color action');
+ selectedText.setSelectionRange(0,0);
+ selectedText.dispatchEvent(new document.defaultView.Event('select'));
+ assert.equal(context.translationColorBtn.disabled,true,'collapsed selection disables color action');
+ assert.equal(context.aiRetainPageBtn.disabled,true);
+ assert.equal(context.aiDeletePageBtn.disabled,false);
+ const text=context.stickyLayer.querySelector('textarea');
+ text.value+='編輯';
+ text.dispatchEvent(new document.defaultView.Event('input'));
+ assert.equal(file.stickyNotes[0].aiStatus,'confirmed','editing retained text preserves confirmation');
+ assert.equal(context.aiRetainPageBtn.disabled,true,'confirmed page needs no re-retention');
+ context.busy=true;context.updateButtons();
+ assert.equal(context.aiRetainPageBtn.disabled,true);
+ assert.equal(context.aiDeletePageBtn.disabled,true);
+ const beforeBusy=JSON.stringify(file.stickyNotes);
+ context.changePageTranslations(true);
+ assert.equal(JSON.stringify(file.stickyNotes),beforeBusy);
+ context.busy=false;
+ const history=file.history.length;
+ context.aiTranslationsList.querySelector('.ai-delete').click();
+ assert.equal(file.stickyNotes.length,0,'single cross deletes the AI note');
+ assert.equal(file.history.length,history+1);
+ context.updateButtons();
+ assert.equal(context.aiRetainPageBtn.disabled,true);
+ assert.equal(context.aiDeletePageBtn.disabled,true);
+ context.state.currentIndex=-1;context.updateButtons();
+ assert.equal(context.aiRetainPageBtn.disabled,true);
+ assert.equal(context.aiDeletePageBtn.disabled,true);
+ console.log('PASS: edit/review button readiness, busy/no-page guards and single-note deletion');
+}
+function verifyManualTranslation() {
+ context.state.currentIndex=0;context.busy=false;context.restoring=false;
+ context.addTranslationBtn=document.getElementById('addTranslationBtn');
+ context.addTranslationBtn.disabled=false;
+ context.addTranslationBtn.getBoundingClientRect=()=>({width:120,height:40});
+ context.applyBtn=document.getElementById('applyBtn');
+ context.zoom=1;context.noteSequence=0;context.TRANSLATION_RED='#e03024';
+ context.requestAnimationFrame=callback=>callback();
+ vm.runInContext(section('function selectStickyNote(', 'function adjustSelectedNoteFont('),context);
+ vm.runInContext(section('addTranslationBtn.onclick=', 'function copySelectedStickyNotes('),context);
+ const before=file.stickyNotes.length;
+ context.addTranslationBtn.click();
+ assert.equal(file.stickyNotes.length,before+1);
+ const created=file.stickyNotes.at(-1);
+ assert.equal(created.aiStatus,'draft');assert.equal(created.color,'transparent');
+ assert.equal(created.textColor,'#e03024');assert.equal(file.marked,false);
+ assert.ok(!context.exportableNotes(file.stickyNotes).includes(created),'manual draft is excluded from export');
+ const element=context.stickyLayer.querySelector(`[data-note-id="${created.id}"]`);
+ assert.equal(element.classList.contains('selected'),true);
+ assert.equal(element.querySelector('.ai-note-delete').textContent,'×');
+ context.selectStickyNote(null);
+ assert.equal(element.classList.contains('selected'),false,'delete remains hidden when translation is unselected');
+ context.selectStickyNote(created);
+ assert.equal(element.classList.contains('selected'),true,'delete appears on selection');
+ assert.equal(context.aiTranslationsList.querySelector('.ai-retain'),null);
+ context.aiRetainPageBtn.disabled=false;context.aiRetainPageBtn.click();
+ assert.equal(created.aiStatus,'confirmed');
+ assert.ok(context.exportableNotes(file.stickyNotes).includes(created),'retained manual note exports');
+ element.querySelector('.ai-note-delete').click();
+ assert.equal(file.stickyNotes.length,before,'under-sticker delete removes exactly one translation');
+ console.log('PASS: manual draft, bulk retention and selected under-sticker delete');
+}
+verifyExport().then(verifyBulk).then(()=>{verifyManualTranslation();verifyButtons();}).catch(error=>{console.error(error);process.exitCode=1;});

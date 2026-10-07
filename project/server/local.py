@@ -1,5 +1,8 @@
 """Offline single-machine test server. Intentionally binds loopback only."""
-import http.server, json, sqlite3, pathlib, zipfile, io, uuid, datetime, argparse, os
+import http.server, json, sqlite3, pathlib, zipfile, io, uuid, datetime, argparse, os, base64, binascii, sys
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parent))
+from ocr_local import recognize, OcrError
+from ai_translate import translate, generate_translation, ModelUnavailable, TranslationError
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 DATA=ROOT/'local-data'
 DATA.mkdir(exist_ok=True)
@@ -10,6 +13,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
  def answer(self,status,data):
   body=json.dumps(data,ensure_ascii=False).encode();self.send_response(status);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def valid_host(self):return self.headers.get('Host','').split(':')[0] in ('localhost','127.0.0.1')
+ def do_POST(self):
+  if not self.valid_host() or self.headers.get('Sec-Fetch-Site')=='cross-site':return self.answer(403,{'error':'forbidden'})
+  origin=self.headers.get('Origin')
+  if origin!='http://'+self.headers.get('Host',''):return self.answer(403,{'error':'origin'})
+  if self.path not in ('/api/ai/translate','/api/ai/ocr'):return self.answer(404,{'error':'missing'})
+  try:
+   size=int(self.headers.get('Content-Length','0'))
+   if not 0<size<=9*1024**2:return self.answer(413,{'error':'request size must be 1–9 MB'})
+   if self.headers.get('Content-Type','').split(';')[0].strip()!='application/json':return self.answer(415,{'error':'JSON required'})
+   payload=json.loads(self.rfile.read(size))
+   if not isinstance(payload,dict):raise ValueError('JSON object required')
+   if self.path=='/api/ai/ocr':
+    image=payload.get('image')
+    if not isinstance(image,str) or len(image)>8*1024**2:raise ValueError('image must be base64 PNG up to 6MB')
+    png=base64.b64decode(image,validate=True)
+    return self.answer(200,recognize(png))
+  except (ValueError,TypeError,binascii.Error) as e:return self.answer(400,{'error':str(e)})
+  except OcrError as e:return self.answer(503,{'error':str(e)})
+  try:return self.answer(200,translate(payload,generate_translation))
+  except ValueError as e:return self.answer(400,{'error':str(e)})
+  except ModelUnavailable as e:return self.answer(503,{'error':str(e)})
+  except TranslationError as e:return self.answer(502,{'error':str(e)})
  def do_GET(self):
   if not self.valid_host():return self.answer(403,{'error':'invalid host'})
   if self.path=='/api/health':return self.answer(200,{'service':'drawing-desk-local'})

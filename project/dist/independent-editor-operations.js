@@ -32,6 +32,32 @@ function toNativeRect(rect,page) {
   return {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)};
 }
 function sameRect(a,b){return ['x','y','w','h'].every(key=>Math.abs(a[key]-b[key])<0.01);}
+export function planStickyNoteCopies(files,sourceIndex,sourcePageIndex,noteId,scope) {
+  const source=files[sourceIndex]?.pages[sourcePageIndex];
+  const note=source?.stickyNotes.find(item=>item.id===noteId && !item.aiStatus);
+  if(!note || !['file','other-first-pages'].includes(scope))return [];
+  const sourceSize=rotatedSize(source);
+  return files.flatMap((file,fileIndex)=>{
+    if(scope==='file' && fileIndex!==sourceIndex)return [];
+    if(scope==='other-first-pages' && fileIndex===sourceIndex)return [];
+    const indices=scope==='file'?file.pages.map((_,index)=>index).filter(index=>index!==sourcePageIndex):[0];
+    return indices.flatMap(pageIndex=>{
+      const page=file.pages[pageIndex];
+      if(!page)return [];
+      const size=rotatedSize(page);
+      const same=Math.abs(size.pdfW-sourceSize.pdfW)<0.01 && Math.abs(size.pdfH-sourceSize.pdfH)<0.01;
+      // Note coordinates and typography are in raster pixels; keep their
+      // physical PDF size when the destination uses a different raster scale.
+      const scale=(size.w/size.pdfW)/(sourceSize.w/sourceSize.pdfW);
+      const w=Math.min(note.w*scale,size.w),h=Math.min(note.h*scale,size.h);
+      return [{fileIndex,pageIndex,rect:{
+        x:same?Math.max(0,Math.min(note.x*scale,size.w-w)):0,
+        y:same?Math.max(0,Math.min(note.y*scale,size.h-h)):0,
+        w,h
+      },scale,same}];
+    });
+  });
+}
 export function planCrossFileMasks(files,sourceIndex,pageIndex) {
   const source=files[sourceIndex]?.pages[pageIndex];
   if(!source?.pendingRects?.length)return [];

@@ -17,7 +17,7 @@ for(const [kind,edit] of Object.entries({original:empty,note:{...empty,stickyNot
    if(kind==='masked')assert.ok(!text.includes('SECRET'),'covered text must be removed');
    if(kind==='original'||kind==='note')assert.ok(text.includes('SECRET'),'unmasked source text retained');
    const annotations=page.getAnnotations();assert.equal(annotations.length,edit.stickyNotes.length);
-   for(const annot of annotations){assert.equal(annot.getType(),'Stamp');assert.equal(annot.getContents(),'NOTE');annot.destroy();}
+   for(const annot of annotations){assert.equal(annot.getType(),'FreeText');assert.equal(annot.getContents(),'NOTE');assert.ok(annot.getDefaultAppearance().size>0);annot.destroy();}
    if(kind==='note'){
     const pix=page.toPixmap([4,0,0,4,0,0],mupdf.ColorSpace.DeviceRGB);
     try{
@@ -134,4 +134,85 @@ try{
   }finally{structured.destroy();display.destroy();annotation.destroy();}
  }finally{page.destroy();}
 }finally{measuredDoc.destroy();}
-console.log('PASS: independent PDF masked/vector/note paths, scaled text, editor wraps and clipped overflow');
+const aiNote={...note,x:100,y:100,w:150,h:80,fontSize:20,text:'WHITE',visualLines:['WHITE'],color:'transparent',textColor:'#e03024',aiStatus:'confirmed',colorRuns:[{start:2,end:5,color:'#168a38'}]};
+const aiPdf=mupdf.Document.openDocument(exportIndependentPDF(input,[{...empty,stickyNotes:[aiNote]}]),'application/pdf');
+try{
+ const page=aiPdf.loadPage(0);
+ try{
+  const annotation=page.getAnnotations()[0];
+  try{
+   assert.equal(annotation.getContents(),'WHITE');
+   const pix=page.toPixmap([4,0,0,4,0,0],mupdf.ColorSpace.DeviceRGB);
+   try{
+    const pixels=pix.getPixels(),stride=pix.getStride(),n=pix.getNumberOfComponents();
+    const at=(x,y)=>Array.from(pixels.slice(y*stride+x*n,y*stride+x*n+3));
+    assert.ok(at(90,85).every(v=>v>230),'AI annotation background remains transparent over the white fixture');
+    let red=0,green=0;
+    for(let y=85;y<140;y++)for(let x=85;x<180;x++){
+      const [r,g,b]=at(x,y);
+      if(r>g*1.3&&r>b*1.3)red++;
+      if(g>r*1.3&&g>b*1.3)green++;
+    }
+    assert.ok(red>10&&green>10,'AI annotation renders red and selected green glyphs');
+   }finally{pix.destroy();}
+  }finally{annotation.destroy();}
+ }finally{page.destroy();}
+}finally{aiPdf.destroy();}
+// A PDF reader must be able to replace the text, not merely drag the sticker.
+for(const variant of [note,aiNote]){
+ const document=mupdf.Document.openDocument(exportIndependentPDF(input,[{...empty,stickyNotes:[variant]}]),'application/pdf');
+ try{
+  const page=document.loadPage(0);
+  try{
+   const annotation=page.getAnnotations()[0];
+   try{
+    assert.equal(annotation.getType(),'FreeText');
+    assert.equal(annotation.getDefaultAppearance().font,'Helv');
+    const expected=variant.textColor==='#e03024'?[224/255,48/255,36/255]:[17/255,17/255,17/255];
+    assert.ok(annotation.getDefaultAppearance().color.every((value,i)=>Math.abs(value-expected[i])<0.001));
+    annotation.setContents('再次編輯');
+    annotation.update();
+   }finally{annotation.destroy();}
+  }finally{page.destroy();}
+  const buffer=document.saveToBuffer('garbage=4,compress');
+  try{
+   const reopened=mupdf.Document.openDocument(buffer.asUint8Array().slice(),'application/pdf');
+   try{
+    const reopenedPage=reopened.loadPage(0);
+    try{
+     const edited=reopenedPage.getAnnotations()[0];
+     try{assert.equal(edited.getContents(),'再次編輯');assert.equal(edited.getType(),'FreeText');}finally{edited.destroy();}
+    }finally{reopenedPage.destroy();}
+   }finally{reopened.destroy();}
+  }finally{buffer.destroy();}
+ }finally{document.destroy();}
+}
+const shortConfirmed={...aiNote,id:'tiny',x:100,y:100,w:150,h:8,padding:2,fontSize:20,text:'RED',visualLines:['RED'],colorRuns:[]};
+const overlapConfirmed={...aiNote,id:'overlap',x:110,y:102,w:150,h:8,padding:2,fontSize:20,text:'GREEN',visualLines:['GREEN'],textColor:'#168a38',colorRuns:[]};
+const crowded=mupdf.Document.openDocument(exportIndependentPDF(input,[{...empty,stickyNotes:[shortConfirmed,overlapConfirmed]}]),'application/pdf');
+try{
+ const page=crowded.loadPage(0);
+ try{
+  const annotations=page.getAnnotations();
+  try{
+   assert.equal(annotations.length,2,'overlapping confirmed stickers both export');
+   assert.deepEqual(annotations.map(a=>a.getContents()),['RED','GREEN']);
+   for(const annotation of annotations){
+    const appearance=annotation.toDisplayList();
+    try{assert.ok(appearance.toStructuredText().asText().trim(),'short sticker still paints partial first line');}
+    finally{appearance.destroy();}
+   }
+  }finally{annotations.forEach(a=>a.destroy());}
+  const pix=page.toPixmap([4,0,0,4,0,0],mupdf.ColorSpace.DeviceRGB);
+  try{
+   const pixels=pix.getPixels(),stride=pix.getStride(),n=pix.getNumberOfComponents();
+   let colored=0;
+   for(let y=80;y<91;y++)for(let x=80;x<155;x++){
+    const i=y*stride+x*n,[r,g,b]=pixels.slice(i,i+3);
+    if((r>g*1.3&&r>b*1.3)||(g>r*1.3&&g>b*1.3))colored++;
+   }
+   assert.ok(colored>3,'overlapping short stickers visibly render in preview PDF');
+  }finally{pix.destroy();}
+ }finally{page.destroy();}
+}finally{crowded.destroy();}
+console.log('PASS: independent PDF masked/vector/note paths, editable FreeText, scaled text, wraps, clipping and AI colors');
